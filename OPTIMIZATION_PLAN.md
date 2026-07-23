@@ -9,6 +9,18 @@ Transform the LinkedIn MCP server from a brittle, singleton-based browser scrape
 - **Data extraction**: HTML page navigation → DOM innerText → noise stripping
 - **No direct API calls** to LinkedIn REST/GraphQL/Voyager
 
+## Architectural Rationale (Why Not the Official LinkedIn API?)
+
+| Aspect | Official REST API | Browser Scraper |
+|--------|------------------|-----------------|
+| **Access** | LinkedIn-approved developers only — not available to most | Any LinkedIn session works |
+| **Profile fields** | ~10 basic fields (id, name, photo, headline) | **11 sections** — experience, education, skills, certifications, projects, posts, etc. |
+| **Lookup** | By Person ID only (per-app unique, can't share) | By username: `linkedin.com/in/{username}` |
+| **Data storage** | Forbidden for non-authenticated members | No restriction |
+| **Opt-out** | Members can hide via "Off-LinkedIn Visibility" | Can't be hidden |
+
+The official REST API (`v2/me`, `v2/people/(id:{id})`) is a non-starter for this project — it returns 10× less data, can't look up by username, requires LinkedIn approval (rarely granted), and forbids storing data about other members. **Scraping is the only viable approach.**
+
 ---
 
 ## Phase 1: Foundation & Bug Fixes (Additive Only)
@@ -83,7 +95,75 @@ Transform the LinkedIn MCP server from a brittle, singleton-based browser scrape
 - `OPTIMIZATION_PLAN.md` (this file)
 - `AUTH_COOKIE_ARCHITECTURE.md`
 - `AGENT_INTEGRATION_GUIDE.md`
-- Updated `README.md`
+- Updated `README.md` (reference `linkedin_mcp_server` internals here, not in tool code)
+
+---
+
+## Phase 9: Standalone Module Extraction (tools/ Separation)
+
+The new `tools/` package must eventually operate without importing from `linkedin_mcp_server`. Currently it bridges via thin wrappers (`tools/_auth/`, `tools/_browser/`, `tools/_scraping/`). This phase extracts each bridge into a fully standalone module.
+
+### Architecture
+
+```
+tools/
+├── _auth/__init__.py         → Bridge to linkedin_mcp_server.auth (Phase 9.1-9.4)
+├── _browser/__init__.py      → Bridge to linkedin_mcp_server.drivers.browser (Phase 9.5-9.7)
+├── _scraping/__init__.py     → Bridge to linkedin_mcp_server.scraping (Phase 9.8)
+├── _scraping/fields.py       → ALREADY standalone — section configs and parsers
+└── person/profile.py         → ALREADY matches official auth flow
+```
+
+### Extraction Plan
+
+| ID | Task | Current State | Target |
+|----|------|---------------|--------|
+| 9.1 | `_auth/get_authenticated_extractor()` | Bridge — calls `get_ready_extractor()` flow from `linkedin_mcp_server.dependencies` | **Keep as bridge** — the official flow is stable; wrapping it is correct |
+| 9.2 | `CookieStore` | Only in `linkedin_mcp_server` plan (Phase 2.7) | Extract to `tools/_auth/store.py` — encrypts `cookies.json` with Fernet + machine-ID key |
+| 9.3 | `FingerprintEngine` | Implicit in `synthesize_user_agent()` + `SourceState` | Extract to `tools/_auth/fingerprint.py` — capture UA, viewport, locale, timezone; hash + validate on load |
+| 9.4 | `SessionHealth` | Implicit in `ensure_authenticated()` → `validate_session()` | Extract to `tools/_auth/health.py` — `/feed/` health check, `SessionExpired` detection |
+| 9.5 | `BrowserPool` | `_browser` global singleton in `drivers/browser.py` | Extract to `tools/_browser/pool.py` — multi-context pool with cookie injection |
+| 9.6 | `CookieInjector` | `browser.import_cookies()` + `_BRIDGE_COOKIE_PRESETS` in `core/browser.py` | Extract to `tools/_browser/injector.py` — cookie preset selection, domain normalization, async injection |
+| 9.7 | `ProfileManager` | `session_state.py` — `SourceState`, `RuntimeState`, paths | Extract to `tools/_browser/profiles.py` — state persistence, path resolution, generation tracking |
+| 9.8 | `LinkedInExtractor` | `scraping/extractor.py` (1350+ lines) | Extract to `tools/_scraping/extractor.py` — strip server-specific deps (logging, diagnostics), keep extraction logic |
+| 9.9 | `tools/errors/` | `tools/_errors/exceptions.py` already exists | Verify alignment with `core/exceptions.py` hierarchy |
+
+### File Layout After Phase 9
+
+```
+tools/
+├── _auth/
+│   ├── __init__.py         ← get_authenticated_extractor() bridge (kept thin)
+│   ├── store.py            ← CookieStore (encrypted jar + fingerprint binding)
+│   ├── fingerprint.py      ← FingerprintEngine (capture, hash, validate)
+│   └── health.py           ← SessionHealth (/feed/ check, expiry detection)
+├── _browser/
+│   ├── __init__.py         ← get_browser(), close_browser() bridge (kept thin)
+│   ├── pool.py             ← BrowserPool (multi-context lifecycle)
+│   ├── injector.py         ← CookieInjector (presets, domain norm, injection)
+│   └── profiles.py         ← ProfileManager (SourceState, RuntimeState, paths)
+├── _scraping/
+│   ├── __init__.py         ← re-exports
+│   ├── fields.py           ← standalone (already done)
+│   └── extractor.py        ← LinkedInExtractor (extraction logic only)
+├── _errors/
+│   ├── __init__.py         ← re-exports
+│   └── exceptions.py       ← Typed exception hierarchy
+├── base_tool.py            ← BaseTool ABC (standalone)
+├── tool_registry.py        ← ToolRegistry (standalone)
+├── person/                 ← tool implementations
+├── company/
+├── job/
+├── messaging/
+└── feed/
+```
+
+### Migration Path
+1. Extract `CookieStore` first (no runtime deps, just file I/O + crypto)
+2. Extract `BrowserPool` + `CookieInjector` + `ProfileManager` (need `patchright`)
+3. Extract `LinkedInExtractor` (biggest file, needs careful de-coupling)
+4. Replace bridge imports with direct standalone imports
+5. Delete bridges once all consumers are migrated
 
 ---
 

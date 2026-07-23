@@ -7,6 +7,16 @@ from typing import Any
 from tools.base_tool import BaseTool, ToolResult, ToolTier, ToolStability
 
 
+_INVALID_MAX_SCROLLS_MSG = (
+    "max_scrolls must be between 1 and 50, got %s"
+)
+
+_VALID_SECTION_NAMES = (
+    "experience, education, interests, honors, languages, "
+    "certifications, skills, projects, contact_info, posts"
+)
+
+
 class GetPersonProfile(BaseTool):
     name = "get_person_profile"
     capability = "person"
@@ -23,7 +33,7 @@ class GetPersonProfile(BaseTool):
             },
             "sections": {
                 "type": "string",
-                "description": "Comma-separated extra sections: experience, education, interests, honors, languages, certifications, skills, projects, contact_info, posts",
+                "description": f"Comma-separated extra sections: {_VALID_SECTION_NAMES}",
             },
             "max_scrolls": {
                 "type": "integer",
@@ -38,15 +48,22 @@ class GetPersonProfile(BaseTool):
         sections = inputs.get("sections")
         max_scrolls = inputs.get("max_scrolls")
 
-        from tools._scraping import LinkedInExtractor
+        if max_scrolls is not None and (not isinstance(max_scrolls, int) or max_scrolls < 1 or max_scrolls > 50):
+            return ToolResult(
+                success=False,
+                error=_INVALID_MAX_SCROLLS_MSG % max_scrolls,
+            )
+
         from tools._auth import get_authenticated_extractor
         from tools._scraping.fields import parse_person_sections
 
-        extractor = await get_authenticated_extractor()
+        extractor = await get_authenticated_extractor(tool_name=self.name)
         requested, unknown = parse_person_sections(sections)
 
         result = await extractor.scrape_person(
-            linkedin_username, requested, max_scrolls=max_scrolls
+            linkedin_username,
+            requested,
+            max_scrolls=max_scrolls,
         )
 
         if unknown:
