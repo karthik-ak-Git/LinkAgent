@@ -1,6 +1,7 @@
 {
   "$schema": "https://glama.ai/schemas/mcp-server.json",
   "name": "LinkAgent",
+  "version": "0.1.0",
   "description": "Universal browser extraction server using Chrome DevTools Protocol",
   "repository": "https://github.com/karthik-ak-Git/LinkAgent",
   "runtime": "python",
