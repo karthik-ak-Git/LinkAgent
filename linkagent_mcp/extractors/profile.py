@@ -23,93 +23,120 @@ EXTRACT_PROFILE_JS = """
         skills: [],
     };
 
-    // Name — top heading
-    const h1 = document.querySelector('h1');
-    if (h1) data.name = h1.innerText.trim();
+    // Name — use H2 (LinkedIn profile pages use H2 for the name, not H1)
+    const h2s = [...document.querySelectorAll('h2')];
+    const nameH2 = h2s.find(h => {
+        const text = h.innerText.trim();
+        return text && text.length > 1 && text.length < 60
+            && !text.includes('notifications') && !text.includes('Ad Options')
+            && !text.includes("Don't");
+    });
+    if (nameH2) data.name = nameH2.innerText.trim();
 
-    // Headline — text directly below name
-    const headlineEl = document.querySelector('.text-body-medium.break-words');
-    if (headlineEl) data.headline = headlineEl.innerText.trim();
-
-    // Location — near the headline
-    const spans = document.querySelectorAll('.text-body-small.inline.t-black--light.break-words');
-    for (const span of spans) {
-        const text = span.innerText.trim();
-        if (text && !text.includes(' connections') && text.length < 100) {
-            data.location = text;
-            break;
+    // Headline — text below name, look for job title pattern
+    const allText = document.body.innerText;
+    const lines = allText.split('\\n').map(l => l.trim()).filter(l => l.length > 0);
+    const nameIdx = lines.findIndex(l => l === data.name);
+    if (nameIdx >= 0) {
+        // Next non-empty line after name is usually the headline
+        for (let i = nameIdx + 1; i < Math.min(nameIdx + 5, lines.length); i++) {
+            const line = lines[i];
+            if (line.length > 5 && line.length < 200 && line !== data.name
+                && !line.includes('More') && !line.includes('Message') && !line.includes('Follow')
+                && !line.includes('verification') && !line.includes('connections')) {
+                data.headline = line;
+                break;
+            }
+        }
+        // Location — often after headline, contains city/country patterns
+        for (let i = nameIdx + 1; i < Math.min(nameIdx + 8, lines.length); i++) {
+            const line = lines[i];
+            if ((line.includes(',') || line.includes('Area') || line.includes('India')
+                || line.includes('United') || line.includes('Germany') || line.includes('Remote'))
+                && line.length < 100 && !line.includes('followers') && !line.includes('connections')) {
+                data.location = line;
+                break;
+            }
         }
     }
 
     // Connections
-    const connLinks = document.querySelectorAll('a[href*="connections"]');
-    for (const link of connLinks) {
-        const text = link.innerText.trim();
-        if (text.includes('connection')) {
-            data.connections = text;
-            break;
-        }
-    }
+    const connMatch = allText.match(/(\\d+[\\d,.]*\\s*connections?)/i);
+    if (connMatch) data.connections = connMatch[1];
 
-    // About section
-    const aboutSection = document.querySelector('#about');
-    if (aboutSection) {
-        let container = aboutSection.closest('section') || aboutSection.parentElement;
-        if (container) {
-            const aboutText = container.querySelector('.inline-show-more-text, .display-flex.align-items-center.t-14.t-normal');
-            if (aboutText) data.about = aboutText.innerText.trim();
+    // About section — find by H2 "About" and grab the section content
+    const aboutH2 = h2s.find(h => h.innerText.trim().startsWith('About'));
+    if (aboutH2) {
+        const section = aboutH2.closest('section') || aboutH2.parentElement;
+        if (section) {
+            // Get all text in this section, skip the heading itself
+            const sectionText = section.innerText;
+            const aboutStart = sectionText.indexOf('About');
+            if (aboutStart >= 0) {
+                data.about = sectionText.substring(aboutStart + 5, aboutStart + 2000).trim();
+                // Clean up: remove next section heading if present
+                const nextSection = data.about.search(/\\n(Experience|Education|Skills|Projects|Recommendations)/);
+                if (nextSection > 0) data.about = data.about.substring(0, nextSection).trim();
+            }
         }
     }
 
     // Experience section
-    const expSection = document.querySelector('#experience');
-    if (expSection) {
-        let container = expSection.closest('section') || expSection.parentElement;
-        if (container) {
-            const items = container.querySelectorAll('li.artdeco-list__item');
+    const expH2 = h2s.find(h => h.innerText.trim().startsWith('Experience'));
+    if (expH2) {
+        const section = expH2.closest('section') || expH2.parentElement;
+        if (section) {
+            const items = section.querySelectorAll('li');
             for (const item of items) {
-                const title = item.querySelector('.display-flex.align-items-center.t-14.t-normal');
-                const company = item.querySelector('.t-14.t-normal.t-black');
-                const dateRange = item.querySelector('.t-14.t-normal.t-black--light');
-                if (title) {
-                    data.experience.push({
-                        title: title.innerText.trim(),
-                        company: company ? company.innerText.trim() : '',
-                        dateRange: dateRange ? dateRange.innerText.trim() : '',
-                    });
+                const text = item.innerText.trim();
+                if (text.length > 5 && text.length < 500) {
+                    const lines = text.split('\\n').map(l => l.trim()).filter(l => l);
+                    if (lines.length >= 1) {
+                        data.experience.push({
+                            title: lines[0] || '',
+                            company: lines[1] || '',
+                            dateRange: lines.find(l => l.match(/\\d{4}|Present|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec/)) || '',
+                        });
+                    }
                 }
             }
         }
     }
 
     // Education section
-    const eduSection = document.querySelector('#education');
-    if (eduSection) {
-        let container = eduSection.closest('section') || eduSection.parentElement;
-        if (container) {
-            const items = container.querySelectorAll('li.artdeco-list__item');
+    const eduH2 = h2s.find(h => h.innerText.trim().startsWith('Education'));
+    if (eduH2) {
+        const section = eduH2.closest('section') || eduH2.parentElement;
+        if (section) {
+            const items = section.querySelectorAll('li');
             for (const item of items) {
-                const school = item.querySelector('.display-flex.align-items-center.t-14.t-normal');
-                const degree = item.querySelector('.t-14.t-normal.t-black');
-                if (school) {
-                    data.education.push({
-                        school: school.innerText.trim(),
-                        degree: degree ? degree.innerText.trim() : '',
-                    });
+                const text = item.innerText.trim();
+                if (text.length > 5 && text.length < 300) {
+                    const lines = text.split('\\n').map(l => l.trim()).filter(l => l);
+                    if (lines.length >= 1) {
+                        data.education.push({
+                            school: lines[0] || '',
+                            degree: lines[1] || '',
+                        });
+                    }
                 }
             }
         }
     }
 
-    // Skills
-    const skillsSection = document.querySelector('#skills');
-    if (skillsSection) {
-        let container = skillsSection.closest('section') || skillsSection.parentElement;
-        if (container) {
-            const skillItems = container.querySelectorAll('.display-flex.align-items-center.t-14.t-normal span[aria-hidden="true"]');
-            for (const skill of skillItems) {
-                const text = skill.innerText.trim();
-                if (text && text.length > 1) data.skills.push(text);
+    // Skills section
+    const skillsH2 = h2s.find(h => h.innerText.trim().startsWith('Skills'));
+    if (skillsH2) {
+        const section = skillsH2.closest('section') || skillsH2.parentElement;
+        if (section) {
+            const items = section.querySelectorAll('li');
+            for (const item of items) {
+                const text = item.innerText.trim();
+                if (text.length > 1 && text.length < 100) {
+                    // First line of each skill item is usually the skill name
+                    const skillName = text.split('\\n')[0].trim();
+                    if (skillName) data.skills.push(skillName);
+                }
             }
         }
     }
@@ -129,7 +156,7 @@ class ProfileExtractor(BaseExtractor):
         if username and f"/in/{username}" not in url:
             target = f"https://www.linkedin.com/in/{username}"
             await self.client.navigate(target)
-            await self._wait_for_element("h1", timeout_ms=8000)
+            await self._wait_for_element("h2", timeout_ms=8000)
 
         if "/in/" not in url:
             return {"error": f"Not a profile page. Current URL: {url}"}

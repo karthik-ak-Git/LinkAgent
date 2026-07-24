@@ -17,23 +17,64 @@ EXTRACT_JOB_SEARCH_JS = """
         results: [],
     };
 
-    const cards = document.querySelectorAll('.jobs-search-results__list-item, li.jobs-search-results__result-card');
+    // Job cards use class "job-card-container" (DIVs, not LIs or role=listitem)
+    const cards = document.querySelectorAll('.job-card-container');
     for (const card of cards) {
-        const titleEl = card.querySelector('.job-card-list__title--link, a.job-card-container__link');
-        const companyEl = card.querySelector('.artdeco-entity-lockup__subtitle, .job-card-container__primary-description');
-        const locationEl = card.querySelector('.artdeco-entity-lockup__caption, .job-card-container__metadata-item');
-        const dateEl = card.querySelector('.job-card-container__listed-time, .t-date');
-        const linkEl = card.querySelector('a[href*="/jobs/view/"]');
+        const lines = card.innerText.split('\\n').map(l => l.trim()).filter(Boolean);
+        const result = {};
 
-        const job = {};
-        if (titleEl) job.title = titleEl.innerText.trim();
-        if (companyEl) job.company = companyEl.innerText.trim();
-        if (locationEl) job.location = locationEl.innerText.trim();
-        if (dateEl) job.posted = dateEl.innerText.trim();
-        if (linkEl) job.url = linkEl.href;
+        // Find job detail link
+        const link = card.querySelector('a[href*="/jobs/view/"]');
+        if (link) result.url = link.href;
 
-        if (job.title) data.results.push(job);
+        // Title is typically the first meaningful line
+        if (lines.length >= 1) result.title = lines[0];
+
+        // Company is typically the second line
+        if (lines.length >= 2) result.company = lines[1];
+
+        // Location: line containing city/country patterns or "(On-site)" / "(Remote)"
+        for (const line of lines) {
+            if (line.match(/\\(On-site\\)|\\(Remote\\)|\\(Hybrid\\)|India|USA|London|Berlin|Remote/i)
+                && line !== result.title && line !== result.company) {
+                result.location = line;
+                break;
+            }
+        }
+
+        // Posted time: line containing "ago", "hour", "day", "week", "month"
+        for (const line of lines) {
+            if (line.match(/\\d+\\s*(hour|day|week|month|minute)s?\\s*ago/i)
+                || line.match(/Just posted|Today|Yesterday/i)) {
+                result.posted = line;
+                break;
+            }
+        }
+
+        // Salary: line containing currency symbols or "/yr" / "/hr"
+        for (const line of lines) {
+            if (line.match(/[₹$€£]|\\/yr|\\/hr|LPA|Lakh/i) && line !== result.title) {
+                result.salary = line;
+                break;
+            }
+        }
+
+        // Tags (Easy Apply, Promoted, etc.)
+        const tags = [];
+        for (const line of lines) {
+            if (line.match(/^Easy Apply$|^Promoted$|^Actively reviewing/i)) {
+                tags.push(line);
+            }
+        }
+        if (tags.length > 0) result.tags = tags;
+
+        if (result.title) data.results.push(result);
     }
+
+    // Get total result count from page text
+    const bodyText = document.body.innerText;
+    const countMatch = bodyText.match(/([\\d,]+\\+?)\\s*results?/i);
+    if (countMatch) data.total_results = countMatch[1];
 
     return JSON.stringify(data);
 })()
@@ -58,46 +99,67 @@ EXTRACT_JOB_DETAIL_JS = """
         easy_apply: false,
     };
 
-    // Title
+    // Title — H1 works for job detail pages
     const h1 = document.querySelector('h1');
     if (h1) data.title = h1.innerText.trim();
 
-    // Company
-    const companyEl = document.querySelector('.jobs-unified-top-card__company-name a, .jobs-unified-top-card__company-name');
-    if (companyEl) data.company = companyEl.innerText.trim();
+    // Parse body text for structured info
+    const body = document.body.innerText;
+    const lines = body.split('\\n').map(l => l.trim()).filter(Boolean);
 
-    // Location
-    const locationEl = document.querySelector('.jobs-unified-top-card__bullet, .jobs-unified-top-card__primary-description span');
-    if (locationEl) data.location = locationEl.innerText.trim();
-
-    // Posted date and applicants
-    const postedEl = document.querySelector('.jobs-unified-top-card__listed-time, .t-black--light.t-normal');
-    if (postedEl) {
-        const text = postedEl.innerText.trim();
-        if (text.includes('ago')) data.posted = text;
-        if (text.includes('applicant')) data.applicants = text;
+    // Company — line after the title
+    const titleIdx = lines.indexOf(data.title);
+    if (titleIdx >= 0 && titleIdx + 1 < lines.length) {
+        data.company = lines[titleIdx + 1];
     }
 
-    // Easy Apply button
-    const easyApplyBtn = document.querySelector('button.jobs-apply-button, button[aria-label*="Easy Apply"]');
-    if (easyApplyBtn) data.easy_apply = true;
-
-    // Description
-    const descContainer = document.querySelector('.jobs-description, .jobs-box__html-content');
-    if (descContainer) {
-        data.description = descContainer.innerText.trim().substring(0, 5000);
+    // Location — line containing location patterns
+    for (const line of lines) {
+        if (line.match(/\\(On-site\\)|\\(Remote\\)|\\(Hybrid\\)|India|USA|London|Berlin/i)
+            && line !== data.title && line !== data.company) {
+            data.location = line;
+            break;
+        }
     }
 
-    // Job details (employment type, seniority level, etc.)
-    const detailItems = document.querySelectorAll('.jobs-unified-top-card__job-insight span');
-    for (const item of detailItems) {
-        const text = item.innerText.trim();
-        if (text.includes('Full-time') || text.includes('Part-time') || text.includes('Contract')) {
-            data.employment_type = text;
+    // Posted — line with "ago" or "posted"
+    for (const line of lines) {
+        if (line.match(/\\d+\\s*(hour|day|week|month)s?\\s*ago/i)
+            || line.match(/Just posted|Today|Posted/i)) {
+            data.posted = line;
+            break;
         }
-        if (text.includes('Entry') || text.includes('Mid') || text.includes('Senior') || text.includes('Director') || text.includes('Executive')) {
-            data.seniority_level = text;
+    }
+
+    // Applicants
+    for (const line of lines) {
+        if (line.match(/\\d+\\s*applicant/i)) {
+            data.applicants = line;
+            break;
         }
+    }
+
+    // Easy Apply
+    data.easy_apply = body.includes('Easy Apply') || !!document.querySelector('button[aria-label*="Easy Apply"]');
+
+    // Employment type & seniority
+    for (const line of lines) {
+        if (line.match(/^Full-time|^Part-time|^Contract|^Internship|^Temporary/i)) {
+            data.employment_type = line;
+        }
+        if (line.match(/^Entry|^Mid|^Senior|^Director|^Executive|^Associate/i)) {
+            data.seniority_level = line;
+        }
+    }
+
+    // Description — everything between "About the job" / "Description" and the next section
+    const descStart = body.search(/About the job|Description|Job Description/i);
+    if (descStart >= 0) {
+        let descText = body.substring(descStart, descStart + 5000);
+        // Cut off at next major section
+        const cutPoints = descText.search(/\\n(Benefits|Perks|Company|Similar|Report|Save|Apply now|Show more)/i);
+        if (cutPoints > 50) descText = descText.substring(0, cutPoints);
+        data.description = descText.trim();
     }
 
     return JSON.stringify(data);
@@ -126,7 +188,7 @@ class JobExtractor(BaseExtractor):
         if keyword and f"keywords={keyword}" not in current_url:
             target = f"https://www.linkedin.com/jobs/search/?keywords={keyword}"
             await self.client.navigate(target)
-            await self._wait_for_element(".jobs-search-results__list-item", timeout_ms=8000)
+            await self._wait_for_element(".job-card-container", timeout_ms=8000)
 
         raw = await self._eval(EXTRACT_JOB_SEARCH_JS)
         if not raw:

@@ -21,84 +21,81 @@ EXTRACT_COMPANY_JS = """
         size: '',
         headquarters: '',
         founded: '',
-        employees: [],
+        employees_count: '',
+        followers: '',
         posts: [],
     };
 
-    // Company name
+    // Company name — H1 works for company pages
     const h1 = document.querySelector('h1');
     if (h1) data.name = h1.innerText.trim();
 
-    // Headline/tagline
-    const headlineEl = document.querySelector('.org-top-card-summary__headline');
-    if (headlineEl) data.headline = headlineEl.innerText.trim();
+    // Parse body text for structured info
+    const bodyText = document.body.innerText;
 
-    // About section
-    const aboutSection = document.querySelector('#about');
-    if (aboutSection) {
-        let container = aboutSection.closest('section') || aboutSection.parentElement;
-        if (container) {
-            const aboutText = container.querySelector('.inline-show-more-text, .org-about-module__description');
-            if (aboutText) data.about = aboutText.innerText.trim();
+    // Followers
+    const followerMatch = bodyText.match(/(\\d[\\d,.]*[MK]?\\s*followers)/i);
+    if (followerMatch) data.followers = followerMatch[1];
+
+    // Employees
+    const employeeMatch = bodyText.match(/(\\d[\\d,.]*[MK+]*\\s*employees)/i);
+    if (employeeMatch) data.employees_count = employeeMatch[1];
+
+    // Industry — look for text after "Industry" label
+    const industryMatch = bodyText.match(/Industry\\s*\\n([^\\n]+)/i);
+    if (industryMatch) data.industry = industryMatch[1].trim();
+
+    // Company size
+    const sizeMatch = bodyText.match(/Company size\\s*\\n([^\\n]+)/i);
+    if (sizeMatch) data.size = sizeMatch[1].trim();
+
+    // Headquarters
+    const hqMatch = bodyText.match(/Headquarters?\\s*\\n([^\\n]+)/i);
+    if (hqMatch) data.headquarters = hqMatch[1].trim();
+
+    // Founded
+    const foundedMatch = bodyText.match(/Founded\\s*\\n([^\\n]+)/i);
+    if (foundedMatch) data.founded = foundedMatch[1].trim();
+
+    // Website — look for external link in the page
+    const websiteLinks = document.querySelectorAll('a[href^="http"]');
+    for (const link of websiteLinks) {
+        const href = link.href;
+        if (href && !href.includes('linkedin.com') && !href.includes('google')
+            && !href.includes('javascript') && link.innerText.trim().length > 0) {
+            data.website = href;
+            break;
         }
     }
 
-    // Company details (industry, size, etc.)
-    const detailItems = document.querySelectorAll('.org-about-module__org-details dd, .org-about-module__org-information');
-    const labels = ['industry', 'size', 'headquarters', 'founded', 'website'];
-    let detailIdx = 0;
-    for (const item of detailItems) {
-        const text = item.innerText.trim();
-        if (text && detailIdx < labels.length) {
-            data[labels[detailIdx]] = text;
-            detailIdx++;
-        }
-    }
-
-    // Try alternative selectors for details
-    if (!data.industry) {
-        const industryEl = document.querySelector('[data-test="about-company__industry"]');
-        if (industryEl) data.industry = industryEl.innerText.replace('Industry', '').trim();
-    }
-    if (!data.size) {
-        const sizeEl = document.querySelector('[data-test="about-company__size"]');
-        if (sizeEl) data.size = sizeEl.innerText.replace('Company size', '').trim();
-    }
-
-    // Website
-    if (!data.website) {
-        const websiteLink = document.querySelector('a[href*="http"][data-test="about-company__website"]');
-        if (websiteLink) data.website = websiteLink.href;
-    }
-
-    // Recent posts
-    const postSection = document.querySelector('.org-page-details__feed');
-    if (postSection) {
-        const postItems = postSection.querySelectorAll('.org-update__card');
-        for (const item of postItems) {
-            const text = item.querySelector('.org-update__text');
-            const date = item.querySelector('.org-update__date');
-            if (text) {
-                data.posts.push({
-                    text: text.innerText.trim().substring(0, 500),
-                    date: date ? date.innerText.trim() : '',
-                });
+    // About section — find H2 "Overview" and grab content
+    const h2s = [...document.querySelectorAll('h2')];
+    const overviewH2 = h2s.find(h => h.innerText.trim().startsWith('Overview'));
+    if (overviewH2) {
+        const section = overviewH2.closest('section') || overviewH2.parentElement;
+        if (section) {
+            const sectionText = section.innerText;
+            const start = sectionText.indexOf('Overview');
+            if (start >= 0) {
+                data.about = sectionText.substring(start + 8, start + 2000).trim();
+                // Clean up: remove next section heading
+                const nextSection = data.about.search(/\\n(Posts|Jobs|Life|People|Home)/);
+                if (nextSection > 0) data.about = data.about.substring(0, nextSection).trim();
             }
         }
     }
 
-    // Employees (top list on page)
-    const empSection = document.querySelector('.org-people profiles-list');
-    if (empSection) {
-        const empItems = empSection.querySelectorAll('li');
-        for (const item of empItems) {
-            const name = item.querySelector('.actor-name');
-            const title = item.querySelector('.artdeco-entity-lockup__subtitle');
-            if (name) {
-                data.employees.push({
-                    name: name.innerText.trim(),
-                    title: title ? title.innerText.trim() : '',
-                });
+    // Posts section
+    const postsH2 = h2s.find(h => h.innerText.trim().startsWith('Posts'));
+    if (postsH2) {
+        const section = postsH2.closest('section') || postsH2.parentElement;
+        if (section) {
+            const postItems = section.querySelectorAll('[role="article"], li');
+            for (const item of [...postItems].slice(0, 5)) {
+                const text = item.innerText.trim();
+                if (text.length > 10 && text.length < 1000) {
+                    data.posts.push({text: text.substring(0, 500)});
+                }
             }
         }
     }
@@ -145,7 +142,7 @@ class CompanyExtractor(BaseExtractor):
             headquarters=data.get("headquarters", ""),
             founded=data.get("founded", ""),
             company_url=data.get("url", url),
-            employees=data.get("employees", []),
+            employees=[],  # Employee list not reliably extractable
             posts=data.get("posts", []),
         )
 
@@ -159,8 +156,8 @@ class CompanyExtractor(BaseExtractor):
             "size": company.size,
             "headquarters": company.headquarters,
             "founded": company.founded,
-            "employee_count": len(company.employees),
-            "employees": company.employees,
+            "followers": data.get("followers", ""),
+            "employees_count": data.get("employees_count", ""),
             "post_count": len(company.posts),
             "posts": company.posts,
         }
