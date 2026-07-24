@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      padding: 40px;
+      max-width: 600px;
+      margin: 0 auto;
+    }
+    h1 {
+      font-size: 24px;
+      margin-bottom: 24px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .section {
+      background: #16213e;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    .section-title {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      color: #667eea;
+    }
+    .field {
+      margin-bottom: 12px;
+    }
+    .field:last-child { margin-bottom: 0; }
+    label {
+      display: block;
+      font-size: 12px;
+      color: #888;
+      margin-bottom: 4px;
+    }
+    input[type="text"], input[type="number"] {
+      width: 100%;
+      padding: 8px 12px;
+      background: #0f3460;
+      border: 1px solid #374151;
+      border-radius: 6px;
+      color: #eee;
+      font-size: 14px;
+    }
+    input:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+    .checkbox {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .checkbox input {
+      width: 16px;
+      height: 16px;
+    }
+    .btn {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      margin-right: 8px;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+    .btn-secondary {
+      background: #374151;
+      color: #ccc;
+    }
+    .status {
+      margin-top: 16px;
+      padding: 12px;
+      background: #0f3460;
+      border-radius: 6px;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <h1>LinkAgent Settings</h1>
+
+  <div class="section">
+    <div class="section-title">Connection</div>
+    <div class="field">
+      <label>WebSocket Port</label>
+      <input type="number" id="wsPort" value="8765" min="1024" max="65535">
+    </div>
+    <div class="field">
+      <label>Auto-extract on page load</label>
+      <div class="checkbox">
+        <input type="checkbox" id="autoExtract">
+        <span>Enable automatic data extraction</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Data Extraction</div>
+    <div class="field">
+      <label>Max links to extract</label>
+      <input type="number" id="maxLinks" value="100" min="10" max="500">
+    </div>
+    <div class="field">
+      <label>Max images to extract</label>
+      <input type="number" id="maxImages" value="50" min="5" max="200">
+    </div>
+    <div class="field">
+      <label>Max text length</label>
+      <input type="number" id="maxTextLength" value="5000" min="1000" max="20000">
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">MCP Server</div>
+    <div class="field">
+      <label>MCP Server Path</label>
+      <input type="text" id="mcpServerPath" value="linkagent-mcp-server">
+    </div>
+    <div class="field">
+      <label>Auto-start MCP server</label>
+      <div class="checkbox">
+        <input type="checkbox" id="autoStartMcp">
+        <span>Start MCP server on extension load</span>
+      </div>
+    </div>
+  </div>
+
+  <button class="btn btn-primary" id="saveBtn">Save Settings</button>
+  <button class="btn btn-secondary" id="resetBtn">Reset to Defaults</button>
+
+  <div class="status" id="status"></div>
+
+  <script src="options.js"></script>
+</body>
+</html>

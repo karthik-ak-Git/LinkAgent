@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html>
+<head><title>LinkAgent Content Script Test</title></head>
+<body>
+<h1>Testing Content Script Extraction</h1>
+<div id="test-content">
+    <p>This is test content to verify extraction works.</p>
+    <a href="https://example.com">Test Link</a>
+    <img src="test.jpg" alt="Test Image">
+</div>
+<pre id="result"></pre>
+<script>
+// Simplified version of extractPageData for testing
+function extractPageData() {
+    return {
+        url: window.location.href,
+        title: document.title,
+        meta: extractMeta(),
+        headings: extractHeadings(),
+        links: extractLinks(),
+        images: extractImages(),
+        forms: extractForms(),
+        text: extractText(),
+        timestamp: Date.now(),
+    };
+}
+
+function extractMeta() {
+    const metas = {};
+    document.querySelectorAll('meta').forEach(meta => {
+        const name = meta.getAttribute('name') || meta.getAttribute('property');
+        const content = meta.getAttribute('content');
+        if (name && content) metas[name] = content;
+    });
+    return metas;
+}
+
+function extractHeadings() {
+    const headings = [];
+    document.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach(h => {
+        headings.push({
+            level: parseInt(h.tagName[1]),
+            text: h.textContent.trim(),
+            id: h.id || null,
+        });
+    });
+    return headings;
+}
+
+function extractLinks() {
+    const links = [];
+    document.querySelectorAll('a[href]').forEach(a => {
+        links.push({
+            href: a.href,
+            text: a.textContent.trim().substring(0, 100),
+            title: a.title || null,
+        });
+    });
+    return links.slice(0, 100);
+}
+
+function extractImages() {
+    const images = [];
+    document.querySelectorAll('img').forEach(img => {
+        images.push({
+            src: img.src,
+            alt: img.alt || '',
+            width: img.naturalWidth,
+            height: img.naturalHeight,
+        });
+    });
+    return images.slice(0, 50);
+}
+
+function extractForms() {
+    const forms = [];
+    document.querySelectorAll('form').forEach(form => {
+        const fields = [];
+        form.querySelectorAll('input, select, textarea').forEach(field => {
+            fields.push({
+                type: field.type || field.tagName.toLowerCase(),
+                name: field.name || null,
+                id: field.id || null,
+                placeholder: field.placeholder || null,
+            });
+        });
+        forms.push({
+            action: form.action || null,
+            method: form.method || 'GET',
+            fields,
+        });
+    });
+    return forms;
+}
+
+function extractText() {
+    const main = document.querySelector('main, article, [role="main"], .content, .main');
+    const target = main || document.body;
+    const clone = target.cloneNode(true);
+    clone.querySelectorAll('script, style, noscript, iframe').forEach(el => el.remove());
+    return clone.textContent.replace(/\s+/g, ' ').trim().substring(0, 5000);
+}
+
+// Run extraction
+const data = extractPageData();
+document.getElementById('result').textContent = JSON.stringify(data, null, 2);
+</script>
+</body>
+</html>

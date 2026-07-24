@@ -1,0 +1,20 @@
+To load the LinkAgent extension in Opera:
+
+1. Opera should now be open with extensions page
+2. Enable "Developer mode" (top right toggle)
+3. Click "Load unpacked" button
+4. Select folder: D:\LinkAgent\linkagent-extension
+5. The extension should appear in the list
+6. Pin it to the toolbar (puzzle piece icon)
+
+Once loaded, the extension will:
+- Connect to the native messaging host
+- Allow extracting data from any page
+- Provide screenshots and accessibility tree
+
+To test extraction:
+1. Navigate to https://www.linkedin.com/feed/
+2. Open Opera DevTools (F12)
+3. Go to Console tab
+4. Type: chrome.runtime.sendMessage({type: 'la-status'}, console.log)
+5. You should see: {connected: true, tabCount: 1}

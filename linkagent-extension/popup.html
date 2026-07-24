@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 320px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      padding: 16px;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .logo {
+      width: 40px;
+      height: 40px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+    }
+    .title {
+      font-size: 18px;
+      font-weight: 600;
+    }
+    .status {
+      background: #16213e;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+    .status-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .status-row:last-child { margin-bottom: 0; }
+    .status-label { color: #888; font-size: 12px; }
+    .status-value { font-weight: 500; }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 6px;
+    }
+    .dot.green { background: #22c55e; }
+    .dot.red { background: #ef4444; }
+    .dot.yellow { background: #eab308; }
+    .btn {
+      width: 100%;
+      padding: 10px;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      margin-bottom: 8px;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+    .btn-secondary {
+      background: #374151;
+      color: #ccc;
+    }
+    .btn:hover { opacity: 0.9; }
+    .footer {
+      text-align: center;
+      font-size: 11px;
+      color: #666;
+      margin-top: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo">LA</div>
+    <div class="title">LinkAgent</div>
+  </div>
+
+  <div class="status">
+    <div class="status-row">
+      <span class="status-label">Bridge Status</span>
+      <span class="status-value" id="bridgeStatus">
+        <span class="dot yellow"></span>Connecting...
+      </span>
+    </div>
+    <div class="status-row">
+      <span class="status-label">Active Tabs</span>
+      <span class="status-value" id="tabCount">0</span>
+    </div>
+    <div class="status-row">
+      <span class="status-label">Current Page</span>
+      <span class="status-value" id="currentPage">-</span>
+    </div>
+  </div>
+
+  <button class="btn btn-primary" id="extractBtn">Extract Page Data</button>
+  <button class="btn btn-secondary" id="screenshotBtn">Take Screenshot</button>
+
+  <div class="footer">
+    LinkAgent v1.0.0 | Real Chrome Automation
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

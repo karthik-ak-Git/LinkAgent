@@ -1,0 +1,9 @@
+{
+  "name": "com.linkagent.bridge",
+  "description": "LinkAgent Browser Bridge Native Host",
+  "path": "linkagent-host.exe",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://linkagent-extension-id/"
+  ]
+}
