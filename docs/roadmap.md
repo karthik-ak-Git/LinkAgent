@@ -22,7 +22,44 @@ What we've built, what's next, and what we want to overcome.
 - **Error recovery** — Retry failed extractions with backoff
 - **Session validation** — Check if browser is logged in before extraction
 
-### Priority 2: More Data
+### Priority 2: Write Operations (v0.3.0)
+
+Add safe, controlled write operations with human-in-the-loop approval:
+
+**LinkedIn Actions:**
+- **Send connection requests** — with personalized notes
+- **Send messages** — InMail and direct messages
+- **Apply to jobs** — Easy Apply and external redirects
+- **Post content** — text, articles, images
+- **Comment on posts** — engagement actions
+- **Follow/unfollow** — people and companies
+- **React to content** — like, celebrate, insightful
+
+**Safety Mechanisms:**
+- **Approval flow** — every write requires explicit user confirmation
+- **Rate limiting** — configurable cooldown between actions (default: 60s)
+- **Dry-run mode** — preview what would happen without executing
+- **Audit log** — full history of all write operations with timestamps
+- **Rollback** — undo last N actions where possible (unfollow, unreact)
+
+**Architecture:**
+```
+MCP Client → server.py → registry.py → actions/executor.py
+                                          │
+                                    ┌─────┴─────┐
+                                    │  approve?  │
+                                    └─────┬─────┘
+                                          │ yes
+                                          ▼
+                                    actions/linkedin.py
+                                          │
+                                    CDP click/type
+                                          │
+                                          ▼
+                                    Audit Log + Result
+```
+
+### Priority 3: More Data
 
 - **Pagination** — Auto-scroll and extract multiple pages
 - **Expanded sections** — Click "Show more" and "See more" automatically
@@ -63,17 +100,26 @@ What we've built, what's next, and what we want to overcome.
 
 ---
 
-### Problem: No Write Operations
+### Problem: No Write Operations (Addressed in v0.3.0)
 
 **Current:** Can only read data, not interact.
 
-**Goal:** Safe, controlled write operations.
+**Goal:** Safe, controlled write operations with approval flow.
 
-**Ideas:**
-- Human-in-the-loop approval for writes
-- Rate limiting with cooldown periods
-- Operation logging and audit trail
-- Rollback capabilities for accidental actions
+**Plan:**
+- `actions/` module with executor and LinkedIn action handlers
+- Every write goes through approval flow (user must confirm)
+- Rate limiting with configurable cooldown (default 60s)
+- Dry-run mode for previewing actions
+- Audit log recording all write operations
+- Rollback support for reversible actions (unfollow, unreact, withdraw application)
+
+**Implementation Phases:**
+1. Executor with approval gate and rate limiter
+2. LinkedIn connection requests and messages
+3. Job application actions (Easy Apply)
+4. Content actions (post, comment, react)
+5. Audit log and rollback system
 
 ---
 

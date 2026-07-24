@@ -15,7 +15,14 @@ The system only extracts data. It cannot:
 
 **Why:** Write operations risk account restriction. LinkedIn actively monitors automated actions.
 
-**Future:** Write operations could be added as opt-in features with rate limiting and human-in-the-loop approval.
+**Future (v0.3.0):** Write operations will be added as opt-in features with:
+- **Approval flow** — every action requires explicit user confirmation
+- **Rate limiting** — configurable cooldown between actions (default: 60s)
+- **Dry-run mode** — preview what would happen without executing
+- **Audit log** — full history of all write operations
+- **Rollback** — undo reversible actions (unfollow, unreact, withdraw application)
+
+See [Write Operations Plan](#write-operations-plan-v030) below for details.
 
 ---
 
@@ -135,7 +142,59 @@ Each extraction call works with one browser tab. No parallel extraction across m
 
 ---
 
-## LinkedIn-Specific Limitations
+## Write Operations Plan (v0.3.0)
+
+### Planned Write Tools
+
+| Tool | Action | Risk Level | Reversible |
+|------|--------|------------|------------|
+| `linkedin_connect` | Send connection request with note | Medium | No |
+| `linkedin_message` | Send direct message | Medium | No |
+| `linkedin_apply` | Apply to job (Easy Apply) | High | No |
+| `linkedin_post` | Create a post | Medium | Yes (delete) |
+| `linkedin_comment` | Comment on a post | Low | Yes (delete) |
+| `linkedin_react` | Like/celebrate/insightful | Low | Yes (unreact) |
+| `linkedin_follow` | Follow a person/company | Low | Yes (unfollow) |
+| `linkedin_unfollow` | Unfollow a person/company | Low | Yes |
+| `linkedin_withdraw` | Withdraw job application | Medium | No |
+
+### Safety Mechanisms
+
+**Approval Flow:**
+```
+Tool Call → Validate → Rate Check → Show Preview → User Approves → Execute → Log
+                                                              ↓
+                                                        Reject → Skip
+```
+
+**Rate Limiting:**
+- Default cooldown: 60 seconds between write operations
+- Configurable via `LINKAGENT_WRITE_COOLDOWN` env var
+- Per-action limits (e.g., max 20 connection requests/day)
+
+**Dry-Run Mode:**
+- Set `LINKAGENT_DRY_RUN=true` to preview all write operations
+- Shows what would happen without executing
+- Useful for testing automation scripts
+
+**Audit Log:**
+- All write operations logged to `linkagent_audit.log`
+- Contains: timestamp, action, target, parameters, result, user approval
+- JSON format for easy parsing and analysis
+
+**Rollback Support:**
+- `linkedin_unreact` — undo last reaction
+- `linkedin_unfollow` — undo last follow
+- `linkedin_withdraw` — withdraw job application
+- Rollback window: 24 hours for reversible actions
+
+### Implementation Notes
+
+- Write actions use CDP to simulate user clicks and keyboard input
+- Each action has configurable delays between steps (typing speed, click delays)
+- Random delays added to mimic human behavior
+- Session validation before write operations (check if logged in)
+- Browser must be on correct page before action execution
 
 ### Feed
 

@@ -97,6 +97,30 @@ What the system can do right now, and what each tool returns.
 | `list_tabs` | List all open browser tabs |
 | `scroll_page` | Scroll up/down by pixels |
 
+## Write Operations (v0.3.0)
+
+### Planned Write Tools
+
+| Tool | Action | Input | Risk |
+|------|--------|-------|------|
+| `linkedin_connect` | Send connection request | `username`, `note` (optional) | Medium |
+| `linkedin_message` | Send direct message | `username`, `message` | Medium |
+| `linkedin_apply` | Apply to job | `job_id`, `resume` (optional) | High |
+| `linkedin_post` | Create a post | `content`, `visibility` | Medium |
+| `linkedin_comment` | Comment on post | `post_url`, `comment` | Low |
+| `linkedin_react` | Like/celebrate/insightful | `post_url`, `reaction_type` | Low |
+| `linkedin_follow` | Follow person/company | `profile_url` | Low |
+| `linkedin_unfollow` | Unfollow person/company | `profile_url` | Low |
+| `linkedin_withdraw` | Withdraw job application | `application_id` | Medium |
+
+### Safety Features
+
+- **Approval Required** — every write operation requires explicit user confirmation
+- **Rate Limiting** — configurable cooldown between actions (default: 60s)
+- **Dry-Run Mode** — preview actions without executing (`LINKAGENT_DRY_RUN=true`)
+- **Audit Log** — full history of all write operations (`linkagent_audit.log`)
+- **Rollback** — undo reversible actions within 24 hours
+
 ## Read vs Write Operations
 
 **Fully supported (read):**
@@ -106,11 +130,13 @@ What the system can do right now, and what each tool returns.
 - Extract job listings
 - Search people/companies
 
-**Not supported (write):**
-- Posting content
-- Sending messages
-- Sending connection requests
-- Commenting
-- Any action that modifies LinkedIn
+**Not yet supported (write):**
+- Posting content (planned v0.3.0)
+- Sending messages (planned v0.3.0)
+- Sending connection requests (planned v0.3.0)
+- Commenting (planned v0.3.0)
+- Reacting to content (planned v0.3.0)
+- Following/unfollowing (planned v0.3.0)
+- Job applications (planned v0.3.0)
 
-Write operations are intentionally excluded due to risk of account restriction.
+Write operations are intentionally excluded in v0.1.0 due to risk of account restriction. They will be added in v0.3.0 with safety mechanisms including approval flow, rate limiting, and audit logging.

@@ -80,3 +80,117 @@ Many LinkedIn elements don't have unique selectors. The most reliable approach i
 3. Parse lines by position and content patterns
 
 This is fragile to layout changes but much more resilient than CSS selectors.
+
+---
+
+## Write Operations Architecture (v0.3.0)
+
+### Data Flow
+
+```
+┌─────────────────────────────────────────────────────┐
+│                   MCP Client                        │
+│            (Claude, Cursor, etc.)                   │
+└──────────────────────┬──────────────────────────────┘
+                       │ stdio (JSON-RPC)
+                       ▼
+┌─────────────────────────────────────────────────────┐
+│                 server.py                           │
+│         MCP protocol, tool routing                  │
+└──────────┬──────────────────────┬───────────────────┘
+           │                      │
+           ▼                      ▼
+┌──────────────────┐  ┌──────────────────────────────┐
+│  core/registry.py│  │    actions/executor.py       │
+│  Tool dispatch   │  │    Approval + rate limiting  │
+└────────┬─────────┘  └──────────────┬───────────────┘
+         │                           │
+         ▼                           ▼
+┌──────────────────┐  ┌──────────────────────────────┐
+│  sites/linkedin/ │  │    actions/linkedin.py       │
+│  Extractors      │  │    Write action handlers     │
+└──────────────────┘  └──────────────┬───────────────┘
+                                     │
+                                     ▼
+                          ┌──────────────────────┐
+                          │   Audit Log          │
+                          │   (linkagent_audit)  │
+                          └──────────────────────┘
+                                     │
+                                     ▼
+                          ┌──────────────────────┐
+                          │    CDPClient          │
+                          │    click/type/navigate│
+                          └──────────┬───────────┘
+                                     │ WebSocket
+                                     ▼
+                          ┌──────────────────────┐
+                          │  Chromium Browser     │
+                          │  (user logged in)     │
+                          └──────────────────────┘
+```
+
+### New Modules
+
+```
+linkagent_mcp/
+├── actions/
+│   ├── __init__.py
+│   ├── executor.py          # Approval flow, rate limiting, dry-run
+│   └── linkedin/
+│       ├── __init__.py
+│       ├── connect.py       # Send connection requests
+│       ├── message.py       # Send direct messages
+│       ├── apply.py         # Job applications
+│       ├── post.py          # Create posts
+│       ├── comment.py       # Comment on posts
+│       ├── react.py         # Like/celebrate/insightful
+│       └── follow.py        # Follow/unfollow
+├── core/
+│   ├── audit.py             # Audit log writer
+│   └── approval.py          # User approval interface
+```
+
+### Approval Flow
+
+```python
+# Conceptual flow in actions/executor.py
+async def execute_write(action: WriteAction) -> ActionResult:
+    # 1. Validate action parameters
+    validate_action(action)
+
+    # 2. Check rate limits
+    if rate_limiter.is_cooldown_active(action.type):
+        return ActionResult(cooldown_remaining=rate_limiter.time_remaining())
+
+    # 3. Dry-run check
+    if config.dry_run:
+        return ActionResult(preview=True, would_do=action.description)
+
+    # 4. Request user approval (MCP prompt)
+    approval = await request_approval(action)
+    if not approval:
+        return ActionResult(rejected=True)
+
+    # 5. Execute via CDP
+    result = await perform_action(action)
+
+    # 6. Log to audit trail
+    audit_log.record(action, result)
+
+    # 7. Update rate limiter
+    rate_limiter.record(action.type)
+
+    return result
+```
+
+### Safety Layers
+
+| Layer | Purpose | Config |
+|-------|---------|--------|
+| Approval | User confirms every write | Always on for writes |
+| Rate Limit | Cooldown between actions | `LINKAGENT_WRITE_COOLDOWN` |
+| Dry-run | Preview without execute | `LINKAGENT_DRY_RUN` |
+| Audit | Full operation history | `linkagent_audit.log` |
+| Rollback | Undo reversible actions | 24h window |
+| Random Delay | Mimic human behavior | 0.5-2s between steps |
