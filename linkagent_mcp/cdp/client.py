@@ -7,12 +7,18 @@ capture screenshots, and scroll pages.
 Protocol:
     Each command is a JSON message with a unique ID and method name.
     Responses are matched by ID and returned as dicts.
+
+Connection:
+    Uses a persistent WebSocket connection. Call connect() before sending
+    commands, and disconnect() when done. The client also supports
+    context manager usage (async with).
 """
 
 import json
 from typing import Any, Optional
 
 import websockets
+from websockets.protocol import State
 
 from ..logging import get_logger
 
@@ -28,8 +34,14 @@ class CDPClient:
 
     Usage:
         client = CDPClient("ws://127.0.0.1:9222/devtools/page/ABC123")
+        await client.connect()
         result = await client.evaluate("document.title")
         await client.navigate("https://example.com")
+        await client.disconnect()
+
+    Or as a context manager:
+        async with CDPClient(ws_url) as client:
+            result = await client.evaluate("document.title")
     """
 
     def __init__(self, ws_url: str, timeout: int = 30):
@@ -43,6 +55,29 @@ class CDPClient:
         self.ws_url = ws_url
         self.timeout = timeout
         self._msg_id = 0
+        self._ws: Optional[websockets.WebSocketClientProtocol] = None
+
+    @property
+    def _is_open(self) -> bool:
+        return self._ws is not None and self._ws.state == State.OPEN
+
+    async def connect(self) -> None:
+        """Open a persistent WebSocket connection to the tab."""
+        if self._is_open:
+            return
+        self._ws = await websockets.connect(
+            self.ws_url,
+            max_size=50 * 1024 * 1024,  # 50MB for large pages
+            close_timeout=5,
+        )
+        logger.debug("Connected to %s", self.ws_url)
+
+    async def disconnect(self) -> None:
+        """Close the WebSocket connection."""
+        if self._is_open:
+            await self._ws.close()
+            logger.debug("Disconnected from %s", self.ws_url)
+        self._ws = None
 
     async def evaluate(self, expression: str) -> Any:
         """
@@ -109,7 +144,7 @@ class CDPClient:
 
     async def send(self, method: str, params: Optional[dict] = None) -> dict:
         """
-        Send a raw CDP command.
+        Send a raw CDP command over the persistent connection.
 
         Args:
             method: CDP method name (e.g. "Runtime.evaluate").
@@ -117,22 +152,30 @@ class CDPClient:
 
         Returns:
             CDP response dict.
+
+        Raises:
+            RuntimeError: If not connected (call connect() first).
         """
+        if not self._is_open:
+            raise RuntimeError("Not connected. Call connect() first.")
+
         self._msg_id += 1
         msg = {"id": self._msg_id, "method": method}
         if params:
             msg["params"] = params
 
-        async with websockets.connect(
-            self.ws_url,
-            max_size=50 * 1024 * 1024,  # 50MB for large pages
-            close_timeout=5,
-        ) as ws:
-            await ws.send(json.dumps(msg))
-            return json.loads(await ws.recv())
+        await self._ws.send(json.dumps(msg))
+
+        # Read until we get our response (skip CDP events)
+        while True:
+            raw = await self._ws.recv()
+            resp = json.loads(raw)
+            if resp.get("id") == self._msg_id:
+                return resp
 
     async def __aenter__(self):
+        await self.connect()
         return self
 
     async def __aexit__(self, *args):
-        pass
+        await self.disconnect()

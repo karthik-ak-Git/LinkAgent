@@ -127,7 +127,7 @@ _browser = BrowserManager(
 
 def _get_client_for_url(url: str = "") -> CDPClient | None:
     """
-    Get a CDPClient for a tab matching the URL's domain.
+    Get a connected CDPClient for a tab matching the URL's domain.
 
     Falls back to any available tab if no domain-specific match is found.
     Returns None if no browser tab is available.
@@ -146,7 +146,7 @@ def _get_client_for_url(url: str = "") -> CDPClient | None:
 
 
 def _get_client_for_tab(tab=None) -> CDPClient | None:
-    """Create a CDPClient for a given tab, or any available tab."""
+    """Create a connected CDPClient for a given tab, or any available tab."""
     if tab is None:
         tab = _browser.get_any_tab()
     if not tab or not tab.ws_url:
@@ -199,7 +199,11 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
                     type="text",
                     text="No browser tab found. Open a browser with CDP enabled and navigate to the target site.",
                 )]
-            result = await registry.extract(name, client, **arguments)
+            await client.connect()
+            try:
+                result = await registry.extract(name, client, **arguments)
+            finally:
+                await client.disconnect()
             return [TextContent(type="text", text=json.dumps(result, indent=2, ensure_ascii=False))]
 
         # ── Built-in browser control tools ──
@@ -229,33 +233,45 @@ async def _handle_navigate(args: dict) -> list[TextContent]:
     client = _get_client_for_tab()
     if not client:
         return [TextContent(type="text", text="No browser tab found")]
-    url = args["url"]
-    await client.navigate(url)
-    logger.info("Navigated to %s", url)
-    return [TextContent(type="text", text=f"Navigated to {url}")]
+    await client.connect()
+    try:
+        url = args["url"]
+        await client.navigate(url)
+        logger.info("Navigated to %s", url)
+        return [TextContent(type="text", text=f"Navigated to {url}")]
+    finally:
+        await client.disconnect()
 
 
 async def _handle_screenshot() -> list[TextContent]:
     client = _get_client_for_tab()
     if not client:
         return [TextContent(type="text", text="No browser tab found")]
-    data = await client.screenshot()
-    if not data:
-        return [TextContent(type="text", text="Screenshot failed")]
-    import base64
-    path = get_config().screenshot_dir / "screenshot.png"
-    with open(path, "wb") as f:
-        f.write(base64.b64decode(data))
-    logger.info("Screenshot saved to %s", path)
-    return [TextContent(type="text", text=f"Screenshot saved to {path}")]
+    await client.connect()
+    try:
+        data = await client.screenshot()
+        if not data:
+            return [TextContent(type="text", text="Screenshot failed")]
+        import base64
+        path = get_config().screenshot_dir / "screenshot.png"
+        with open(path, "wb") as f:
+            f.write(base64.b64decode(data))
+        logger.info("Screenshot saved to %s", path)
+        return [TextContent(type="text", text=f"Screenshot saved to {path}")]
+    finally:
+        await client.disconnect()
 
 
 async def _handle_execute_js(args: dict) -> list[TextContent]:
     client = _get_client_for_tab()
     if not client:
         return [TextContent(type="text", text="No browser tab found")]
-    result = await client.evaluate(args["script"])
-    return [TextContent(type="text", text=str(result)[:5000] if result else "No result")]
+    await client.connect()
+    try:
+        result = await client.evaluate(args["script"])
+        return [TextContent(type="text", text=str(result)[:5000] if result else "No result")]
+    finally:
+        await client.disconnect()
 
 
 async def _handle_list_tabs() -> list[TextContent]:
@@ -268,11 +284,15 @@ async def _handle_scroll(args: dict) -> list[TextContent]:
     client = _get_client_for_tab()
     if not client:
         return [TextContent(type="text", text="No browser tab found")]
-    direction = args.get("direction", "down")
-    pixels = args.get("pixels", 800)
-    sign = pixels if direction == "down" else -pixels
-    await client.scroll(sign)
-    return [TextContent(type="text", text=f"Scrolled {direction} {pixels}px")]
+    await client.connect()
+    try:
+        direction = args.get("direction", "down")
+        pixels = args.get("pixels", 800)
+        sign = pixels if direction == "down" else -pixels
+        await client.scroll(sign)
+        return [TextContent(type="text", text=f"Scrolled {direction} {pixels}px")]
+    finally:
+        await client.disconnect()
 
 
 # ──────────────────────────────────────────────────────────────
