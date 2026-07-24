@@ -1,17 +1,25 @@
 """
-LinkAgent MCP — Universal browser-based extraction via CDP.
+LinkAgent MCP — Universal browser extraction via CDP.
 
-Core:
-    core.base       — BaseExtractor (subclass this for new sites)
-    core.registry   — Registry (register extractors here)
-    core.models     — Data models
+A plugin-based MCP server that extracts structured data from any website
+using Chrome DevTools Protocol. Site extractors are auto-discovered and
+registered at startup.
 
-Sites:
-    sites.linkedin  — LinkedIn extractors (feed, profile, company, jobs, search)
+Architecture:
+    server.py           → MCP protocol, tool routing, stdio transport
+    config.py           → Environment-based configuration
+    logging.py          → Structured logging setup
+    cdp/browser.py      → Browser discovery (cross-platform)
+    cdp/client.py       → WebSocket CDP commands
+    core/base.py        → BaseExtractor ABC for site modules
+    core/registry.py    → Tool registry, dynamic dispatch
+    sites/              → Site-specific extractors (linkedin, etc.)
 
-To add a new site:
+Adding a new site:
     1. Create sites/mysite/__init__.py
     2. Implement extractors subclassing core.BaseExtractor
-    3. Expose register(registry) function
-    4. It's auto-discovered on server start
+    3. Define register(registry) function
+    4. Restart the server — it's auto-discovered
 """
+
+__version__ = "0.1.0"

@@ -1,5 +1,14 @@
 """
-Company page extractor — extracts LinkedIn company page data.
+LinkedIn Company Extractor.
+
+Extracts company page data including name, about, followers, employees,
+industry, size, headquarters, and recent posts.
+
+Selector strategy:
+    - Company name: H1 (works for company pages)
+    - Followers/employees: Body text regex
+    - Overview section: H2-based extraction
+    - Website: External links (non-linkedin.com)
 """
 
 from ....core.base import BaseExtractor

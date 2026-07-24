@@ -1,5 +1,14 @@
 """
-Profile page extractor — extracts person profile data.
+LinkedIn Profile Extractor.
+
+Extracts person profile data including name, headline, location, about,
+connections, experience, education, and skills.
+
+Selector strategy:
+    - Name: H2 (not H1 — LinkedIn uses H2 for profile names)
+    - Headline/location: Body text line parsing after name
+    - Sections: H2-based extraction (About, Experience, Education, Skills)
+    - Experience items: <li> elements within section
 """
 
 from ....core.base import BaseExtractor

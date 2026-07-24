@@ -1,5 +1,14 @@
 """
-Feed page extractor — extracts posts from the LinkedIn feed.
+LinkedIn Feed Extractor.
+
+Parses the LinkedIn feed page and extracts posts with author, headline,
+text, engagement metrics, and links. Uses the comment button as a stable
+anchor point for post boundary detection (resilient to CSS class changes).
+
+Selector strategy:
+    - Feed container: section[aria-label="Primary content"]
+    - Post boundary: button[aria-label*="Comment"]
+    - Author detection: body text line parsing (not DOM selectors)
 """
 
 from ....core.base import BaseExtractor

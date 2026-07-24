@@ -1,5 +1,14 @@
 """
-Search extractor — extracts people and company search results.
+LinkedIn Search Extractor.
+
+Extracts people and company search results with name, headline, location,
+and profile/company URLs.
+
+Selector strategy:
+    - Search results: [role="listitem"] divs
+    - Profile links: a[href*="/in/"] for people
+    - Company links: a[href*="/company/"] for companies
+    - Name: span[aria-hidden="true"] within links
 """
 
 from ....core.base import BaseExtractor

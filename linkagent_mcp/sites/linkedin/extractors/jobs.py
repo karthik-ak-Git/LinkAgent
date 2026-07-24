@@ -1,5 +1,14 @@
 """
-Job extractor — extracts job search results and job details.
+LinkedIn Jobs Extractor.
+
+Extracts job search results and individual job details including title,
+company, location, description, employment type, and seniority level.
+
+Selector strategy:
+    - Job cards: .job-card-container DIVs (NOT [role="listitem"])
+    - Job detail: H1 for title, body text parsing for metadata
+    - Description: Text between "About the job" and next section
+    - Tags: Easy Apply, Promoted detection
 """
 
 from ....core.base import BaseExtractor

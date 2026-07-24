@@ -1,4 +1,5 @@
-"""Entry point: python -m linkagent_mcp"""
+"""Entry point for python -m linkagent_mcp."""
+
 import asyncio
 from .server import main
 
