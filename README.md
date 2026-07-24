@@ -88,6 +88,49 @@ The server exposes these tools:
 
 See [docs/tasks.md](docs/tasks.md) for detailed tool documentation.
 
+## Docker
+
+Run in a containerized Chromium — no local browser needed.
+
+```bash
+# Build and run
+docker compose up -d
+
+# Check logs
+docker compose logs -f
+
+# Stop
+docker compose down
+```
+
+The container runs headless Chromium with CDP exposed on port 9222. Login sessions persist in a Docker volume (`chrome-profile`).
+
+**Docker + Claude Desktop:**
+
+```json
+{
+  "mcpServers": {
+    "linkagent": {
+      "command": "docker",
+      "args": ["compose", "run", "--rm", "linkagent"]
+    }
+  }
+}
+```
+
+**Docker + external CDP access:**
+
+The CDP port is exposed on `localhost:9222`. Other tools can connect directly:
+
+```python
+import websockets, json
+async with websockets.connect("ws://localhost:9222") as ws:
+    await ws.send(json.dumps({"id": 1, "method": "Target.getTargets"}))
+    print(await ws.recv())
+```
+
+See [docs/docker.md](docs/docker.md) for advanced Docker configuration.
+
 ## Configuration
 
 Set via environment variables or a `.env` file:

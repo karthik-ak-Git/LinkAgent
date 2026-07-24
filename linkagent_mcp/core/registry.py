@@ -106,7 +106,8 @@ class Registry:
         # Navigate if needed and URL doesn't match
         if entry.navigate_url:
             current_url = await client.get_url()
-            if not entry.extractor_class.matches_url(current_url):
+            url_matches = any(p in current_url for p in entry.url_patterns)
+            if not url_matches:
                 await client.navigate(entry.navigate_url)
 
         try:
