@@ -1,5 +1,7 @@
 # LinkAgent MCP
 
+[![LinkAgent MCP server](https://glama.ai/mcp/servers/karthik-ak-Git/LinkAgent/badges/card.svg)](https://glama.ai/mcp/servers/karthik-ak-Git/LinkAgent)
+
 Universal browser extraction server using Chrome DevTools Protocol. Extract structured data from any website through an extensible plugin system.
 
 ## How It Works
