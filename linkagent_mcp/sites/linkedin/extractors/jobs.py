@@ -2,8 +2,8 @@
 Job extractor — extracts job search results and job details.
 """
 
-from .base import BaseExtractor
-from ..types.models import Job
+from ....core.base import BaseExtractor
+from ....core.models import Job
 
 
 EXTRACT_JOB_SEARCH_JS = """

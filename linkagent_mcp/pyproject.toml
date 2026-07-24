@@ -5,7 +5,7 @@ build-backend = "setuptools.backends._legacy:_Backend"
 [project]
 name = "linkagent-mcp"
 version = "0.1.0"
-description = "LinkedIn MCP server using Chrome DevTools Protocol (CDP)"
+description = "Universal browser-based extraction via CDP. MCP server for AI agents."
 requires-python = ">=3.10"
 dependencies = [
     "mcp>=1.0.0",

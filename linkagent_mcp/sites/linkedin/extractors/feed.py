@@ -2,8 +2,8 @@
 Feed page extractor — extracts posts from the LinkedIn feed.
 """
 
-from .base import BaseExtractor
-from ..types.models import Post
+from ....core.base import BaseExtractor
+from ....core.models import Post
 
 
 EXTRACT_FEED_JS = """

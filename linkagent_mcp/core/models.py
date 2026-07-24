@@ -1,14 +1,24 @@
 """
-Data models for LinkedIn extraction results.
+Universal data models for extraction results.
 """
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 @dataclass
+class ExtractionResult:
+    """Generic wrapper for any extraction result."""
+    url: str = ""
+    title: str = ""
+    site: str = ""
+    data: dict = field(default_factory=dict)
+    error: str = ""
+
+
+# ── LinkedIn-specific models (kept for backward compatibility) ──
+
+@dataclass
 class Post:
-    """A LinkedIn feed post."""
     author: str = ""
     headline: str = ""
     text: str = ""
@@ -21,7 +31,6 @@ class Post:
 
 @dataclass
 class Profile:
-    """A LinkedIn person profile."""
     name: str = ""
     headline: str = ""
     location: str = ""
@@ -36,7 +45,6 @@ class Profile:
 
 @dataclass
 class Company:
-    """A LinkedIn company page."""
     name: str = ""
     headline: str = ""
     about: str = ""
@@ -52,7 +60,6 @@ class Company:
 
 @dataclass
 class Job:
-    """A LinkedIn job listing."""
     title: str = ""
     company: str = ""
     location: str = ""
@@ -67,10 +74,9 @@ class Job:
 
 @dataclass
 class SearchResult:
-    """A search result item (person or company)."""
     name: str = ""
     headline: str = ""
     location: str = ""
     url: str = ""
     snippet: str = ""
-    result_type: str = ""  # "person" or "company"
+    result_type: str = ""

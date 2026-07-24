@@ -1,5 +1,8 @@
 """
 Browser discovery and management for CDP connections.
+
+Works with any Chromium browser (Chrome, Edge, Opera, Brave, Vivaldi).
+No site-specific logic — use find_tab(domain) for any website.
 """
 
 import json
@@ -91,16 +94,24 @@ class BrowserManager:
         except Exception:
             return []
 
-    def find_tab(self, url_contains: str) -> Optional[Tab]:
-        """Find a tab whose URL contains the given string."""
+    def get_any_tab(self) -> Optional[Tab]:
+        """Get any available browser tab."""
+        tabs = self.get_tabs()
+        return tabs[0] if tabs else None
+
+    def find_tab(self, domain: str) -> Optional[Tab]:
+        """
+        Find a tab whose URL contains the given domain string.
+
+        Examples:
+            find_tab("linkedin.com")
+            find_tab("twitter.com")
+            find_tab("github.com")
+        """
         for tab in self.get_tabs():
-            if url_contains in tab.url:
+            if domain in tab.url:
                 return tab
         return None
-
-    def find_linkedin_tab(self) -> Optional[Tab]:
-        """Find a tab with LinkedIn open."""
-        return self.find_tab("linkedin.com")
 
     def launch(self, url: str = "about:blank", use_temp_profile: bool = True) -> Optional[subprocess.Popen]:
         """

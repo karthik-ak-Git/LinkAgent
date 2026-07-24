@@ -2,8 +2,8 @@
 Profile page extractor — extracts person profile data.
 """
 
-from .base import BaseExtractor
-from ..types.models import Profile
+from ....core.base import BaseExtractor
+from ....core.models import Profile
 
 
 EXTRACT_PROFILE_JS = """

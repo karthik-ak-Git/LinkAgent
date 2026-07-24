@@ -2,8 +2,8 @@
 Search extractor — extracts people and company search results.
 """
 
-from .base import BaseExtractor
-from ..types.models import SearchResult
+from ....core.base import BaseExtractor
+from ....core.models import SearchResult
 
 
 EXTRACT_PEOPLE_SEARCH_JS = """

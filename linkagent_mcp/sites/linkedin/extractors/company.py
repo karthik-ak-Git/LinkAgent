@@ -2,8 +2,8 @@
 Company page extractor — extracts LinkedIn company page data.
 """
 
-from .base import BaseExtractor
-from ..types.models import Company
+from ....core.base import BaseExtractor
+from ....core.models import Company
 
 
 EXTRACT_COMPANY_JS = """

@@ -1,15 +1,13 @@
 """Test all extractors against live LinkedIn."""
-import sys
-sys.path.insert(0, r"D:\LinkAgent")
-
 import asyncio
 import json
 import io
+import sys
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
 from linkagent_mcp.cdp.browser import BrowserManager
 from linkagent_mcp.cdp.client import CDPClient
-from linkagent_mcp.extractors import (
+from linkagent_mcp.sites.linkedin.extractors import (
     FeedExtractor, ProfileExtractor, CompanyExtractor,
     JobExtractor, SearchExtractor,
 )
@@ -105,7 +103,7 @@ async def test_search(client):
 
 async def main():
     bm = BrowserManager(cdp_port=9222)
-    tab = bm.find_linkedin_tab()
+    tab = bm.find_tab("linkedin.com")
     if not tab:
         print("ERROR: No LinkedIn tab found. Open linkedin.com/feed in your browser.")
         return

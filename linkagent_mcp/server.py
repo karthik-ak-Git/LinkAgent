@@ -1,8 +1,14 @@
 """
 LinkAgent MCP Server
 
-Exposes LinkedIn data extraction tools to AI agents via MCP protocol.
-Uses Chrome DevTools Protocol (CDP) to connect to any Chromium browser.
+Universal extraction server. Uses CDP to connect to any Chromium browser.
+Site extractors are registered dynamically via the registry.
+
+To add a new site:
+1. Create a module under sites/ (e.g. sites/twitter/)
+2. Implement extractors subclassing core.BaseExtractor
+3. Call registry.register() or expose a register(registry) function
+4. The server auto-discovers and exposes new tools
 """
 
 import json
@@ -14,104 +20,66 @@ from mcp.types import Tool, TextContent
 
 from .cdp.browser import BrowserManager
 from .cdp.client import CDPClient
-from .extractors import (
-    FeedExtractor,
-    ProfileExtractor,
-    CompanyExtractor,
-    JobExtractor,
-    SearchExtractor,
-)
+from .core.registry import registry
+from .sites import auto_discover
+
+# ── Bootstrap ──
 
 server = Server("linkagent")
 browser = BrowserManager(cdp_port=9222)
 
+# Register all site extractors
+auto_discover(registry)
 
-def _get_client_for_tab(tab=None) -> CDPClient | None:
-    """Create a CDPClient for a given tab or the current LinkedIn tab."""
-    if tab is None:
-        tab = browser.find_linkedin_tab()
+
+def _get_client_for_url(url: str = "") -> CDPClient | None:
+    """Get a CDPClient for a tab matching the URL, or any available tab."""
+    tab = None
+    if url:
+        # Try to find a tab that matches the URL's domain
+        for domain in registry.get_domains():
+            if domain in url:
+                tab = browser.find_tab(domain)
+                break
+    if not tab:
+        tab = browser.find_tab("linkedin.com") or browser.get_any_tab()
     if not tab or not tab.ws_url:
         return None
     return CDPClient(tab.ws_url)
 
 
+def _get_client_for_tab(tab=None) -> CDPClient | None:
+    """Create a CDPClient for a given tab or any available tab."""
+    if tab is None:
+        tab = browser.get_any_tab()
+    if not tab or not tab.ws_url:
+        return None
+    return CDPClient(tab.ws_url)
+
+
+# ── Dynamic tool listing ──
+
 @server.list_tools()
 async def list_tools() -> List[Tool]:
-    return [
+    tools = []
+
+    # Auto-generated tools from registered extractors
+    for t in registry.list_tools():
+        tools.append(Tool(
+            name=t["name"],
+            description=t["description"],
+            inputSchema=t["inputSchema"],
+        ))
+
+    # Built-in browser control tools
+    tools.extend([
         Tool(
-            name="linkedin_feed",
-            description="Extract posts from the LinkedIn feed. Returns authors, headlines, post text, links, and engagement metrics.",
-            inputSchema={"type": "object", "properties": {}},
-        ),
-        Tool(
-            name="linkedin_profile",
-            description="Extract a LinkedIn person profile. Provide username or navigate to profile first.",
+            name="navigate",
+            description="Navigate to any URL in the browser.",
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "username": {
-                        "type": "string",
-                        "description": "LinkedIn username (from URL /in/username)",
-                    },
-                },
-            },
-        ),
-        Tool(
-            name="linkedin_company",
-            description="Extract a LinkedIn company page. Provide company name or navigate first.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "company_name": {
-                        "type": "string",
-                        "description": "LinkedIn company name (from URL /company/name)",
-                    },
-                },
-            },
-        ),
-        Tool(
-            name="linkedin_jobs",
-            description="Search jobs or extract job details. Provide keyword for search, or job_id for detail.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "keyword": {
-                        "type": "string",
-                        "description": "Job search keyword",
-                    },
-                    "job_id": {
-                        "type": "string",
-                        "description": "LinkedIn job ID (from URL /jobs/view/{id})",
-                    },
-                },
-            },
-        ),
-        Tool(
-            name="linkedin_search",
-            description="Search for people or companies on LinkedIn.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "keyword": {
-                        "type": "string",
-                        "description": "Search keyword",
-                    },
-                    "search_type": {
-                        "type": "string",
-                        "enum": ["people", "company"],
-                        "default": "people",
-                        "description": "Type of search: people or company",
-                    },
-                },
-            },
-        ),
-        Tool(
-            name="linkedin_navigate",
-            description="Navigate to a LinkedIn URL in the browser.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "url": {"type": "string", "description": "LinkedIn URL to navigate to"},
+                    "url": {"type": "string", "description": "URL to navigate to"},
                 },
                 "required": ["url"],
             },
@@ -148,74 +116,37 @@ async def list_tools() -> List[Tool]:
                 },
             },
         ),
-    ]
+    ])
 
+    return tools
+
+
+# ── Tool dispatch ──
 
 @server.call_tool()
 async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
     try:
-        # --- LinkedIn extraction tools ---
-        if name == "linkedin_feed":
-            tab = browser.find_linkedin_tab()
-            client = _get_client_for_tab(tab)
+        # ── Registry-based extraction tools ──
+        entry = registry.get_entry(name)
+        if entry:
+            client = _get_client_for_url(entry.navigate_url)
             if not client:
-                return [TextContent(type="text", text="No LinkedIn tab found. Open linkedin.com/feed in your browser.")]
-            result = await FeedExtractor(client).extract()
+                return [TextContent(type="text", text="No browser tab found. Open a browser with CDP enabled on port 9222.")]
+            result = await registry.extract(name, client, **arguments)
             return [TextContent(type="text", text=json.dumps(result, indent=2, ensure_ascii=False))]
 
-        elif name == "linkedin_profile":
-            tab = browser.find_linkedin_tab()
-            client = _get_client_for_tab(tab)
+        # ── Built-in browser tools ──
+        if name == "navigate":
+            client = _get_client_for_tab()
             if not client:
-                return [TextContent(type="text", text="No LinkedIn tab found. Open LinkedIn in your browser.")]
-            result = await ProfileExtractor(client).extract(username=arguments.get("username", ""))
-            return [TextContent(type="text", text=json.dumps(result, indent=2, ensure_ascii=False))]
-
-        elif name == "linkedin_company":
-            tab = browser.find_linkedin_tab()
-            client = _get_client_for_tab(tab)
-            if not client:
-                return [TextContent(type="text", text="No LinkedIn tab found. Open LinkedIn in your browser.")]
-            result = await CompanyExtractor(client).extract(company_name=arguments.get("company_name", ""))
-            return [TextContent(type="text", text=json.dumps(result, indent=2, ensure_ascii=False))]
-
-        elif name == "linkedin_jobs":
-            tab = browser.find_linkedin_tab()
-            client = _get_client_for_tab(tab)
-            if not client:
-                return [TextContent(type="text", text="No LinkedIn tab found. Open LinkedIn in your browser.")]
-            result = await JobExtractor(client).extract(
-                keyword=arguments.get("keyword", ""),
-                job_id=arguments.get("job_id", ""),
-            )
-            return [TextContent(type="text", text=json.dumps(result, indent=2, ensure_ascii=False))]
-
-        elif name == "linkedin_search":
-            tab = browser.find_linkedin_tab()
-            client = _get_client_for_tab(tab)
-            if not client:
-                return [TextContent(type="text", text="No LinkedIn tab found. Open LinkedIn in your browser.")]
-            result = await SearchExtractor(client).extract(
-                keyword=arguments.get("keyword", ""),
-                search_type=arguments.get("search_type", "people"),
-            )
-            return [TextContent(type="text", text=json.dumps(result, indent=2, ensure_ascii=False))]
-
-        # --- Browser control tools ---
-        elif name == "linkedin_navigate":
-            tab = browser.find_linkedin_tab() or (browser.get_tabs()[0] if browser.get_tabs() else None)
-            if not tab:
-                return [TextContent(type="text", text="No browser tabs found")]
-            client = CDPClient(tab.ws_url)
+                return [TextContent(type="text", text="No browser tab found")]
             await client.navigate(arguments["url"])
             return [TextContent(type="text", text=f"Navigated to {arguments['url']}")]
 
         elif name == "take_screenshot":
-            tabs = browser.get_tabs()
-            tab = browser.find_linkedin_tab() or (tabs[0] if tabs else None)
-            if not tab:
+            client = _get_client_for_tab()
+            if not client:
                 return [TextContent(type="text", text="No tab found")]
-            client = CDPClient(tab.ws_url)
             data = await client.screenshot()
             if data:
                 import base64, os
@@ -226,11 +157,9 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
             return [TextContent(type="text", text="Screenshot failed")]
 
         elif name == "execute_js":
-            tabs = browser.get_tabs()
-            tab = browser.find_linkedin_tab() or (tabs[0] if tabs else None)
-            if not tab:
+            client = _get_client_for_tab()
+            if not client:
                 return [TextContent(type="text", text="No tab found")]
-            client = CDPClient(tab.ws_url)
             result = await client.evaluate(arguments["script"])
             return [TextContent(type="text", text=str(result)[:5000] if result else "No result")]
 
@@ -240,11 +169,9 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
             return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
         elif name == "scroll_page":
-            tabs = browser.get_tabs()
-            tab = browser.find_linkedin_tab() or (tabs[0] if tabs else None)
-            if not tab:
+            client = _get_client_for_tab()
+            if not client:
                 return [TextContent(type="text", text="No tab found")]
-            client = CDPClient(tab.ws_url)
             direction = arguments.get("direction", "down")
             pixels = arguments.get("pixels", 800)
             sign = pixels if direction == "down" else -pixels
