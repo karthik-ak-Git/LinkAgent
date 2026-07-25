@@ -1,0 +1,24 @@
+services:
+  linkagent:
+    build: .
+    container_name: linkagent-mcp-test
+    volumes:
+      - chrome-profile:/app/chrome-profile
+    environment:
+      - CDP_PORT=9222
+      - LINKAGENT_LOG_LEVEL=INFO
+      - LINKAGENT_SERVER_NAME=linkagent
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9222/json/version', timeout=3)"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+      start_period: 20s
+    ports:
+      - "9222:9222"
+
+volumes:
+  chrome-profile:

@@ -10,15 +10,12 @@ echo "Chrome: $CHROME_BIN"
 echo "Profile: $CHROME_PROFILE"
 echo "CDP Port: $CDP_PORT"
 
-# Create profile directory if it doesn't exist
 mkdir -p "$CHROME_PROFILE"
 
-# Remove stale profile locks from previous runs
 rm -f "$CHROME_PROFILE/SingletonLock" 2>/dev/null || true
 rm -f "$CHROME_PROFILE/SingletonSocket" 2>/dev/null || true
 rm -f "$CHROME_PROFILE/SingletonCookie" 2>/dev/null || true
 
-# Launch Chromium with CDP enabled
 echo "[1/2] Starting Chromium with CDP on port $CDP_PORT..."
 "$CHROME_BIN" \
     --headless=new \
@@ -33,22 +30,22 @@ echo "[1/2] Starting Chromium with CDP on port $CDP_PORT..."
     --disable-features=TranslateUI \
     --lang=en-US \
     &
+CHROME_PID=$!
 
-# Wait for CDP to become available (no curl in slim image, use python)
-echo "[2/2] Waiting for CDP on port $CDP_PORT..."
-for i in $(seq 1 30); do
+echo "Waiting for CDP on port $CDP_PORT..."
+for i in $(seq 1 60); do
     if python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:$CDP_PORT/json/version', timeout=2)" 2>/dev/null; then
         echo "CDP ready!"
         break
     fi
-    if [ "$i" -eq 30 ]; then
-        echo "ERROR: CDP did not start within 30 seconds"
+    if [ "$i" -eq 60 ]; then
+        echo "ERROR: CDP did not start within 60 seconds"
+        kill "$CHROME_PID" 2>/dev/null || true
         exit 1
     fi
     sleep 1
 done
 
-# Start the MCP server (stdio transport)
-echo "Starting MCP server..."
+echo "[2/2] Starting MCP server..."
 cd /app
 exec python -m linkagent_mcp

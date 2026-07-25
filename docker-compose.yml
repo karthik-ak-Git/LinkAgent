@@ -12,6 +12,12 @@ services:
     stdin_open: true
     tty: true
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9222/json/version', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
 
   # Chromium only: expose CDP port for external MCP server
   # Use this if you want to run the MCP server on the host
