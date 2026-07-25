@@ -33,15 +33,17 @@ echo "[1/2] Starting Chromium with CDP on port $CDP_PORT..."
 CHROME_PID=$!
 
 echo "Waiting for CDP on port $CDP_PORT..."
+CDP_READY=0
 for i in $(seq 1 60); do
     if python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:$CDP_PORT/json/version', timeout=2)" 2>/dev/null; then
         echo "CDP ready!"
+        CDP_READY=1
         break
     fi
     if [ "$i" -eq 60 ]; then
-        echo "ERROR: CDP did not start within 60 seconds"
+        echo "WARNING: CDP not ready after 60s, MCP server will start anyway"
         kill "$CHROME_PID" 2>/dev/null || true
-        exit 1
+        break
     fi
     sleep 1
 done
