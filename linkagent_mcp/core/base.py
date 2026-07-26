@@ -72,6 +72,30 @@ class BaseExtractor(ABC):
         """
         return await self._eval(js)
 
+    async def _click(self, selector: str) -> bool:
+        """Click an element by CSS selector. Returns True on success."""
+        return await self.client.click(selector)
+
+    async def _type(self, selector: str, text: str, delay_ms: int = 50) -> bool:
+        """Type text into an element. Returns True on success."""
+        return await self.client.type_text(selector, text, delay_ms)
+
+    async def _clear_and_type(self, selector: str, text: str, delay_ms: int = 50) -> bool:
+        """Clear an input and type new text. Returns True on success."""
+        return await self.client.clear_and_type(selector, text, delay_ms)
+
+    async def _send_keys(self, keys: list[str]) -> None:
+        """Send keyboard keys (e.g. ['Enter'], ['Tab'])."""
+        await self.client.send_keys(keys)
+
+    async def _get_text(self, selector: str) -> Optional[str]:
+        """Get visible text of an element."""
+        return await self.client.get_text(selector)
+
+    async def _get_value(self, selector: str) -> Optional[str]:
+        """Get value of an input element."""
+        return await self.client.get_value(selector)
+
     async def _scroll(self, pixels: int = 800) -> None:
         """Scroll the page."""
         await self.client.scroll(pixels)

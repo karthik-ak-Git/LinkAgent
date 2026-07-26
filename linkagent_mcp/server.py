@@ -88,6 +88,80 @@ BROWSER_TOOLS = [
             },
         },
     ),
+    Tool(
+        name="click",
+        description="Click an element on the page by CSS selector. Triggers native mouse events (mousedown, mouseup, click).",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "selector": {"type": "string", "description": "CSS selector for the element to click"},
+            },
+            "required": ["selector"],
+        },
+    ),
+    Tool(
+        name="type_text",
+        description="Type text into an input field or textarea by CSS selector. Focuses the element and types character by character.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "selector": {"type": "string", "description": "CSS selector for the input element"},
+                "text": {"type": "string", "description": "Text to type"},
+                "clear": {"type": "boolean", "description": "Clear existing text before typing", "default": False},
+                "delay_ms": {"type": "integer", "description": "Delay between keystrokes in ms", "default": 50},
+            },
+            "required": ["selector", "text"],
+        },
+    ),
+    Tool(
+        name="send_keys",
+        description="Send keyboard key presses (e.g. Enter, Tab, Escape). Useful for submitting forms, navigating, or closing modals.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "keys": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of key names to press (e.g. ['Enter'], ['Tab', 'Enter'])",
+                },
+            },
+            "required": ["keys"],
+        },
+    ),
+    Tool(
+        name="get_text",
+        description="Get the visible text content of an element by CSS selector.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "selector": {"type": "string", "description": "CSS selector for the element"},
+            },
+            "required": ["selector"],
+        },
+    ),
+    Tool(
+        name="get_value",
+        description="Get the current value of an input/textarea element.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "selector": {"type": "string", "description": "CSS selector for the input element"},
+            },
+            "required": ["selector"],
+        },
+    ),
+    Tool(
+        name="wait_for_element",
+        description="Wait until an element appears on the page (by CSS selector). Useful after navigation or clicking.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "selector": {"type": "string", "description": "CSS selector to wait for"},
+                "timeout_ms": {"type": "integer", "description": "Max wait time in ms", "default": 5000},
+            },
+            "required": ["selector"],
+        },
+    ),
 ]
 
 
@@ -217,6 +291,18 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             return await _handle_list_tabs()
         elif name == "scroll_page":
             return await _handle_scroll(arguments)
+        elif name == "click":
+            return await _handle_click(arguments)
+        elif name == "type_text":
+            return await _handle_type(arguments)
+        elif name == "send_keys":
+            return await _handle_send_keys(arguments)
+        elif name == "get_text":
+            return await _handle_get_text(arguments)
+        elif name == "get_value":
+            return await _handle_get_value(arguments)
+        elif name == "wait_for_element":
+            return await _handle_wait(arguments)
         else:
             return [TextContent(type="text", text=f"Unknown tool: {name}")]
 
@@ -291,6 +377,106 @@ async def _handle_scroll(args: dict) -> list[TextContent]:
         sign = pixels if direction == "down" else -pixels
         await client.scroll(sign)
         return [TextContent(type="text", text=f"Scrolled {direction} {pixels}px")]
+    finally:
+        await client.disconnect()
+
+
+async def _handle_click(args: dict) -> list[TextContent]:
+    client = _get_client_for_tab()
+    if not client:
+        return [TextContent(type="text", text="No browser tab found")]
+    await client.connect()
+    try:
+        selector = args["selector"]
+        clicked = await client.click(selector)
+        if clicked:
+            return [TextContent(type="text", text=f"Clicked: {selector}")]
+        else:
+            return [TextContent(type="text", text=f"Element not found: {selector}")]
+    finally:
+        await client.disconnect()
+
+
+async def _handle_type(args: dict) -> list[TextContent]:
+    client = _get_client_for_tab()
+    if not client:
+        return [TextContent(type="text", text="No browser tab found")]
+    await client.connect()
+    try:
+        selector = args["selector"]
+        text = args["text"]
+        clear = args.get("clear", False)
+        delay_ms = args.get("delay_ms", 50)
+        if clear:
+            ok = await client.clear_and_type(selector, text, delay_ms)
+        else:
+            ok = await client.type_text(selector, text, delay_ms)
+        if ok:
+            return [TextContent(type="text", text=f"Typed into: {selector}")]
+        else:
+            return [TextContent(type="text", text=f"Element not found: {selector}")]
+    finally:
+        await client.disconnect()
+
+
+async def _handle_send_keys(args: dict) -> list[TextContent]:
+    client = _get_client_for_tab()
+    if not client:
+        return [TextContent(type="text", text="No browser tab found")]
+    await client.connect()
+    try:
+        keys = args["keys"]
+        await client.send_keys(keys)
+        return [TextContent(type="text", text=f"Sent keys: {', '.join(keys)}")]
+    finally:
+        await client.disconnect()
+
+
+async def _handle_get_text(args: dict) -> list[TextContent]:
+    client = _get_client_for_tab()
+    if not client:
+        return [TextContent(type="text", text="No browser tab found")]
+    await client.connect()
+    try:
+        selector = args["selector"]
+        text = await client.get_text(selector)
+        if text is not None:
+            return [TextContent(type="text", text=text[:5000])]
+        else:
+            return [TextContent(type="text", text=f"Element not found: {selector}")]
+    finally:
+        await client.disconnect()
+
+
+async def _handle_get_value(args: dict) -> list[TextContent]:
+    client = _get_client_for_tab()
+    if not client:
+        return [TextContent(type="text", text="No browser tab found")]
+    await client.connect()
+    try:
+        selector = args["selector"]
+        value = await client.get_value(selector)
+        if value is not None:
+            return [TextContent(type="text", text=value)]
+        else:
+            return [TextContent(type="text", text=f"Element not found: {selector}")]
+    finally:
+        await client.disconnect()
+
+
+async def _handle_wait(args: dict) -> list[TextContent]:
+    client = _get_client_for_tab()
+    if not client:
+        return [TextContent(type="text", text="No browser tab found")]
+    await client.connect()
+    try:
+        selector = args["selector"]
+        timeout_ms = args.get("timeout_ms", 5000)
+        found = await client.wait_for_element(selector, timeout_ms)
+        if found:
+            return [TextContent(type="text", text=f"Element appeared: {selector}")]
+        else:
+            return [TextContent(type="text", text=f"Timeout waiting for: {selector}")]
     finally:
         await client.disconnect()
 
