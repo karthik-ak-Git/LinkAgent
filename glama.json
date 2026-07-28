@@ -5,7 +5,7 @@
   "description": "Universal browser extraction server using Chrome DevTools Protocol",
   "repository": "https://github.com/karthik-ak-Git/LinkAgent",
   "runtime": "docker",
-  "entryPoint": "python -m linkagent_mcp",
+  "entryPoint": "uv run python -m linkagent_mcp",
   "tools": [
     "linkedin_feed",
     "linkedin_profile",
