@@ -392,6 +392,66 @@ class CDPClient:
         """Get the current page title."""
         return await self.evaluate("document.title") or ""
 
+    # ── Browser-level target/window management ──
+    # These methods require connecting to the *browser* WebSocket endpoint
+    # (from /json/version -> webSocketDebuggerUrl), not a page endpoint.
+
+    async def create_target(self, url: str = "about:blank", background: bool = True) -> dict:
+        """Create a new browser target (tab). Requires browser-level connection.
+
+        Args:
+            url: Initial URL for the new tab.
+            background: If True, the tab opens in the background (not focused).
+
+        Returns:
+            CDP response containing "targetId".
+        """
+        return await self.send("Target.createTarget", {
+            "url": url,
+            "newWindow": False,
+            "background": background,
+        })
+
+    async def create_window(self, url: str = "", incognito: bool = False) -> dict:
+        """Create a new browser window. Requires browser-level connection.
+
+        Args:
+            url: Optional URL to navigate to in the new window.
+            incognito: If True, opens an incognito/private window.
+
+        Returns:
+            CDP response containing "windowId" and "bounds".
+        """
+        return await self.send("Browser.createWindow", {
+            "url": url,
+            "incognito": incognito,
+        })
+
+    async def close_target(self, target_id: str) -> dict:
+        """Close a browser target by ID. Requires browser-level connection."""
+        return await self.send("Target.closeTarget", {"targetId": target_id})
+
+    async def get_targets(self) -> list[dict]:
+        """Get all browser targets. Requires browser-level connection.
+
+        Returns:
+            List of target info dicts with targetId, type, title, url, etc.
+        """
+        resp = await self.send("Target.getTargets")
+        return resp.get("result", {}).get("targetInfos", [])
+
+    async def get_window_for_target(self, target_id: str) -> dict:
+        """Get window info for a specific target. Requires browser-level connection.
+
+        Returns:
+            CDP response with windowId, bounds (containing incognito flag).
+        """
+        return await self.send("Browser.getWindowForTarget", {"targetId": target_id})
+
+    async def send_with_timeout(self, method: str, params: Optional[dict] = None) -> dict:
+        import asyncio
+        return await asyncio.wait_for(self.send(method, params), timeout=self.timeout)
+
     async def send(self, method: str, params: Optional[dict] = None) -> dict:
         """
         Send a raw CDP command over the persistent connection.

@@ -27,15 +27,8 @@ linkagent_mcp/
 │   ├── base.py            # BaseExtractor ABC
 │   ├── registry.py        # Tool registry, dynamic dispatch
 │   └── models.py          # Data models
-└── sites/
-    └── linkedin/          # LinkedIn extractors
-        ├── extractors/
-        │   ├── feed.py
-        │   ├── profile.py
-        │   ├── company.py
-        │   ├── jobs.py
-        │   └── search.py
-        └── __init__.py    # register() function
+ └── sites/              # Site plugins (auto-discovered, currently no default site)
+         └── (add your own site plugin here)
 ```
 
 See [docs/architecture.md](docs/architecture.md) for detailed design.
@@ -61,7 +54,7 @@ msedge.exe --remote-debugging-port=9222
 google-chrome --remote-debugging-port=9222
 ```
 
-Log in to LinkedIn (or any target site) in this browser window.
+Log in to any target site in this browser window (session is reused).
 
 ### 2. Install and run
 
@@ -77,16 +70,15 @@ The server exposes these tools:
 
 | Tool | Description |
 |------|-------------|
-| `linkedin_feed` | Extract posts from the LinkedIn feed |
-| `linkedin_profile` | Extract a person's profile |
-| `linkedin_company` | Extract a company page |
-| `linkedin_jobs` | Search jobs or extract job details |
-| `linkedin_search` | Search for people or companies |
 | `navigate` | Navigate to any URL |
 | `take_screenshot` | Capture a page screenshot |
 | `execute_js` | Run arbitrary JavaScript |
 | `list_tabs` | List open browser tabs |
 | `scroll_page` | Scroll the current page |
+| `click` / `type_text` / `send_keys` / `get_text` / `get_value` / `wait_for_element` | Page interaction |
+| `create_hidden_tab` / `create_incognito_tab` / `close_tab` | Tab management |
+| `research_create` / `research_status` / `research_cancel` / `browser_status` | Universal research engine |
+| *(site plugins auto-discovered via `sites/*/register()`)* | Extensible per-site extractors |
 
 See [docs/tasks.md](docs/tasks.md) for detailed tool documentation.
 
@@ -251,10 +243,10 @@ See [docs/roadmap.md](docs/roadmap.md) for the full roadmap.
 
 ### Current (v0.1.0)
 
-- Universal CDP-based extraction framework
-- Plugin system with auto-discovery
-- 5 LinkedIn extractors (feed, profile, company, jobs, search)
-- 5 browser control tools
+ - Universal CDP-based extraction framework
+ - Plugin system with auto-discovery (no bundled site lock-in)
+ - Universal browser automation + research engine (500-query budget, coverage gate)
+ - 14 browser control tools + research/job tools
 - Cross-platform browser detection
 - Environment-based configuration
 - Structured logging

@@ -47,6 +47,16 @@ class Config:
     # MCP
     server_name: str = field(default_factory=lambda: os.getenv("LINKAGENT_SERVER_NAME", "linkagent"))
 
+    # Browser connection mode: reuse_existing | new_page | new_context | launch_browser
+    browser_mode: str = field(default_factory=lambda: os.getenv("LINKAGENT_BROWSER_MODE", "reuse_existing"))
+    active_tab_policy: str = field(default_factory=lambda: os.getenv("LINKAGENT_ACTIVE_TAB_POLICY", "background_tab"))
+    cdp_timeout: int = field(default_factory=lambda: int(os.getenv("LINKAGENT_CDP_TIMEOUT", "10")))
+
+    # Research
+    max_queries: int = field(default_factory=lambda: int(os.getenv("LINKAGENT_MAX_QUERIES", "500")))
+    max_workers: int = field(default_factory=lambda: int(os.getenv("LINKAGENT_MAX_WORKERS", "8")))
+    coverage_threshold: float = field(default_factory=lambda: float(os.getenv("LINKAGENT_COVERAGE_THRESHOLD", "0.90")))
+
     @property
     def cdp_base_url(self) -> str:
         """Full CDP base URL (e.g. http://127.0.0.1:9222)."""

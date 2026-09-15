@@ -37,6 +37,8 @@ from .cdp.client import CDPClient
 from .core.registry import registry
 from .logging import setup_logging
 from .sites import auto_discover
+from .research.engine import ResearchEngine
+from .jobs.manager import JobManager
 
 logger = logging.getLogger("linkagent.server")
 
@@ -162,6 +164,37 @@ BROWSER_TOOLS = [
             "required": ["selector"],
         },
     ),
+    Tool(
+        name="create_hidden_tab",
+        description="Create a new hidden background tab for extraction work. The tab loads in the background without disturbing the user's visible browsing. Uses the same browser session (cookies, auth).",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "URL to load in the new tab (default: about:blank)", "default": "about:blank"},
+            },
+        },
+    ),
+    Tool(
+        name="create_incognito_tab",
+        description="Create a new incognito/private window with a tab. The tab has a separate browser context — cookies, storage, and auth are completely isolated from the main session.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "URL to load in the incognito tab (default: about:blank)", "default": "about:blank"},
+            },
+        },
+    ),
+    Tool(
+        name="close_tab",
+        description="Close a browser tab by its target ID. Useful for cleaning up hidden or incognito tabs created by LinkAgent.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "target_id": {"type": "string", "description": "Target ID of the tab to close"},
+            },
+            "required": ["target_id"],
+        },
+    ),
 ]
 
 
@@ -197,32 +230,58 @@ _browser = BrowserManager(
     cdp_host=get_config().cdp_host,
     cdp_port=get_config().cdp_port,
 )
+_engine = ResearchEngine(browser_manager=_browser, max_queries=get_config().max_queries, coverage_threshold=get_config().coverage_threshold, workers=get_config().max_workers)
+_job_manager = JobManager(_engine)
+
+RESEARCH_TOOLS = [
+    Tool(name="research_create", description="Create a universal research job (background, 500 query budget, evidence/claim tracking)", inputSchema={"type":"object","properties":{"query":{"type":"string"},"max_queries":{"type":"integer","default":500},"background":{"type":"boolean","default":True}},"required":["query"]}),
+    Tool(name="research_status", description="Get research job status/coverage", inputSchema={"type":"object","properties":{"job_id":{"type":"string"}},"required":["job_id"]}),
+    Tool(name="research_cancel", description="Cancel a research job", inputSchema={"type":"object","properties":{"job_id":{"type":"string"}},"required":["job_id"]}),
+    Tool(name="browser_status", description="Browser discovery + session ownership status", inputSchema={"type":"object","properties":{}}),
+]
 
 
 def _get_client_for_url(url: str = "") -> CDPClient | None:
     """
     Get a connected CDPClient for a tab matching the URL's domain.
 
-    Falls back to any available tab if no domain-specific match is found.
+    Priority order:
+    1. Hidden background tab (created by LinkAgent) matching the domain
+    2. Any hidden background tab
+    3. Existing visible tab matching the domain
+    4. Any existing visible tab
+
     Returns None if no browser tab is available.
     """
-    tab = None
+    hidden_tabs = _browser.get_hidden_tabs()
+
     if url:
         for domain in registry.get_domains():
             if domain in url:
+                for t in hidden_tabs:
+                    if domain in t.url or t.url in ("about:blank", ""):
+                        return CDPClient(t.ws_url)
                 tab = _browser.find_tab(domain)
-                break
-    if not tab:
-        tab = _browser.get_any_tab()
+                if tab:
+                    return CDPClient(tab.ws_url)
+
+    if hidden_tabs:
+        return CDPClient(hidden_tabs[0].ws_url)
+
+    tab = _browser.get_any_tab()
     if not tab or not tab.ws_url:
         return None
     return CDPClient(tab.ws_url)
 
 
 def _get_client_for_tab(tab=None) -> CDPClient | None:
-    """Create a connected CDPClient for a given tab, or any available tab."""
+    """Create a connected CDPClient for a given tab, or the best available tab."""
     if tab is None:
-        tab = _browser.get_any_tab()
+        hidden = _browser.get_hidden_tabs()
+        if hidden:
+            tab = hidden[0]
+        else:
+            tab = _browser.get_any_tab()
     if not tab or not tab.ws_url:
         return None
     return CDPClient(tab.ws_url)
@@ -247,7 +306,7 @@ async def list_tools() -> list[Tool]:
 
     # Built-in browser control tools
     tools.extend(BROWSER_TOOLS)
-
+    tools.extend(RESEARCH_TOOLS)
     return tools
 
 
@@ -269,10 +328,14 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         if entry:
             client = _get_client_for_url(entry.navigate_url)
             if not client:
-                return [TextContent(
-                    type="text",
-                    text="No browser tab found. Open a browser with CDP enabled and navigate to the target site.",
-                )]
+                hidden_tab = await _browser.create_hidden_tab(entry.navigate_url or "about:blank")
+                if not hidden_tab:
+                    return [TextContent(
+                        type="text",
+                        text="No browser tab found and could not create a hidden one. Make sure a browser with CDP enabled is running (e.g., Chrome with --remote-debugging-port=9222).",
+                    )]
+                logger.info("Auto-created hidden tab for extraction: %s", name)
+                client = CDPClient(hidden_tab.ws_url)
             await client.connect()
             try:
                 result = await registry.extract(name, client, **arguments)
@@ -303,6 +366,23 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             return await _handle_get_value(arguments)
         elif name == "wait_for_element":
             return await _handle_wait(arguments)
+        elif name == "create_hidden_tab":
+            return await _handle_create_hidden_tab(arguments)
+        elif name == "create_incognito_tab":
+            return await _handle_create_incognito_tab(arguments)
+        elif name == "close_tab":
+            return await _handle_close_tab(arguments)
+        elif name == "research_create":
+            st=_job_manager.create(arguments["query"], max_queries=arguments.get("max_queries",500), background=arguments.get("background",True))
+            return [TextContent(type="text", text=json.dumps({"job_id":st.task_id,"status":st.status}, indent=2))]
+        elif name == "research_status":
+            st=_job_manager.status(arguments["job_id"])
+            return [TextContent(type="text", text=json.dumps(st.progress() if st else {"error":"not found"}, indent=2))]
+        elif name == "research_cancel":
+            st=_job_manager.cancel(arguments["job_id"])
+            return [TextContent(type="text", text=json.dumps({"job_id":arguments["job_id"],"status":st.status if st else "not found"}, indent=2))]
+        elif name == "browser_status":
+            return [TextContent(type="text", text=json.dumps({"cdp_available":_browser.is_cdp_available(),"tabs":len(_browser.get_tabs()),"hidden":len(_browser.get_hidden_tabs()),"mode":get_config().browser_mode}, indent=2))]
         else:
             return [TextContent(type="text", text=f"Unknown tool: {name}")]
 
@@ -349,6 +429,10 @@ async def _handle_screenshot() -> list[TextContent]:
 
 
 async def _handle_execute_js(args: dict) -> list[TextContent]:
+    # §29 security: restrict to allowlisted read-only patterns unless privileged
+    import os
+    if os.getenv("LINKAGENT_ALLOW_JS","0") != "1":
+        return [TextContent(type="text", text="execute_js disabled for security. Set LINKAGENT_ALLOW_JS=1 to enable.")]
     client = _get_client_for_tab()
     if not client:
         return [TextContent(type="text", text="No browser tab found")]
@@ -361,8 +445,18 @@ async def _handle_execute_js(args: dict) -> list[TextContent]:
 
 
 async def _handle_list_tabs() -> list[TextContent]:
-    tabs = _browser.get_tabs()
-    result = [{"id": t.id, "title": t.title, "url": t.url} for t in tabs]
+    tabs = await _browser.get_tabs_extended()
+    result = [
+        {
+            "id": t.id,
+            "title": t.title,
+            "url": t.url,
+            "incognito": t.incognito,
+            "hidden": t.hidden,
+            "type": t.type,
+        }
+        for t in tabs
+    ]
     return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
 
@@ -479,6 +573,43 @@ async def _handle_wait(args: dict) -> list[TextContent]:
             return [TextContent(type="text", text=f"Timeout waiting for: {selector}")]
     finally:
         await client.disconnect()
+
+
+async def _handle_create_hidden_tab(args: dict) -> list[TextContent]:
+    """Create a new hidden background tab for extraction work."""
+    url = args.get("url", "about:blank")
+    tab = await _browser.create_hidden_tab(url)
+    if not tab:
+        return [TextContent(type="text", text="Failed to create hidden tab. Is a browser with CDP running?")]
+    return [TextContent(type="text", text=json.dumps({
+        "target_id": tab.id,
+        "ws_url": tab.ws_url,
+        "url": tab.url,
+        "status": "created_hidden_background",
+    }, indent=2))]
+
+
+async def _handle_create_incognito_tab(args: dict) -> list[TextContent]:
+    """Create a new incognito window with a tab."""
+    url = args.get("url", "about:blank")
+    tab = await _browser.create_incognito_tab(url)
+    if not tab:
+        return [TextContent(type="text", text="Failed to create incognito tab. Is a browser with CDP running?")]
+    return [TextContent(type="text", text=json.dumps({
+        "target_id": tab.id,
+        "ws_url": tab.ws_url,
+        "url": tab.url,
+        "status": "created_incognito",
+    }, indent=2))]
+
+
+async def _handle_close_tab(args: dict) -> list[TextContent]:
+    """Close a browser tab by target ID."""
+    target_id = args["target_id"]
+    ok = await _browser.close_tab(target_id)
+    if ok:
+        return [TextContent(type="text", text=f"Closed tab: {target_id}")]
+    return [TextContent(type="text", text=f"Failed to close tab: {target_id}")]
 
 
 # ──────────────────────────────────────────────────────────────

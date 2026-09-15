@@ -1,9 +1,0 @@
-﻿{
-    "path":  "D:\\LinkAgent\\linkagent-host\\host.py",
-    "description":  "LinkAgent Browser Bridge Native Host",
-    "name":  "com.linkagent.bridge",
-    "allowed_origins":  [
-                            "chrome-extension://dpcnpnchhdfbamkhfmlnmfmibajipmmn/"
-                        ],
-    "type":  "stdio"
-}

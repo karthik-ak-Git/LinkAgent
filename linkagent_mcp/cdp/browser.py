@@ -36,6 +36,8 @@ class Tab:
     url: str
     ws_url: str
     type: str = "page"
+    incognito: bool = False
+    hidden: bool = False
 
 
 @dataclass(frozen=True)
@@ -109,19 +111,6 @@ class BrowserManager:
             if tab:
                 client = CDPClient(tab.ws_url)
     """
-
-    def __init__(self, cdp_host: str = "127.0.0.1", cdp_port: int = 9222):
-        """
-        Initialize the browser manager.
-
-        Args:
-            cdp_host: Host address for CDP connections.
-            cdp_port: Port number for Chrome DevTools Protocol.
-        """
-        self.cdp_host = cdp_host
-        self.cdp_port = cdp_port
-        self._base_url = f"http://{cdp_host}:{cdp_port}"
-        self._browser_paths = _get_browser_paths()
 
     def is_cdp_available(self) -> bool:
         """
@@ -265,6 +254,228 @@ class BrowserManager:
                 return True
             time.sleep(0.5)
         return False
+
+    # ── Browser-level WebSocket (for target/window management) ──
+
+    def get_browser_ws_url(self) -> Optional[str]:
+        """Get the browser-level WebSocket URL from /json/version.
+
+        This URL is needed for browser-level CDP commands like
+        Target.createTarget, Target.getTargets, Browser.createWindow, etc.
+
+        Returns:
+            The WebSocket URL string, or None if CDP is unavailable.
+        """
+        try:
+            resp = urllib.request.urlopen(f"{self._base_url}/json/version", timeout=5)
+            data = json.loads(resp.read())
+            ws_url = data.get("webSocketDebuggerUrl")
+            if ws_url:
+                logger.debug("Browser WS URL: %s", ws_url)
+            return ws_url
+        except Exception as e:
+            logger.debug("Failed to get browser WS URL: %s", e)
+            return None
+
+    def _make_page_ws_url(self, target_id: str) -> str:
+        """Construct a page-level WebSocket URL for the given target ID."""
+        return f"ws://{self.cdp_host}:{self.cdp_port}/devtools/page/{target_id}"
+
+    # ── Hidden tab tracking (instance-level, not class shared) ──
+    def __init__(self, cdp_host: str = "127.0.0.1", cdp_port: int = 9222):
+        self.cdp_host = cdp_host
+        self.cdp_port = cdp_port
+        self._base_url = f"http://{cdp_host}:{cdp_port}"
+        self._browser_paths = _get_browser_paths()
+        self._hidden_tabs: dict[str, Tab] = {}
+        self._session_ownership: dict[str, str] = {}  # target_id -> "user" | "agent"
+
+    # Keep old __init__ compat via override - already defined above
+
+    # ── Target/window management ──
+
+    async def create_hidden_tab(self, url: str = "about:blank") -> Optional[Tab]:
+        """Create a new hidden (background) tab for extraction work.
+
+        The tab is created in the background — it won't steal focus or
+        appear visibly to the user. Uses the same browser context/session
+        as existing tabs (same cookies, auth state).
+
+        Args:
+            url: Initial URL to load in the new tab.
+
+        Returns:
+            Tab object for the new hidden tab, or None on failure.
+        """
+        browser_ws = self.get_browser_ws_url()
+        if not browser_ws:
+            logger.warning("Cannot create hidden tab: browser WS URL unavailable")
+            return None
+
+        from .client import CDPClient
+        client = CDPClient(browser_ws)
+        await client.connect()
+        try:
+            result = await client.create_target(url=url, background=True)
+            target_id = result.get("result", {}).get("targetId")
+            if not target_id:
+                logger.error("create_target returned no targetId")
+                return None
+
+            ws_url = self._make_page_ws_url(target_id)
+            tab = Tab(
+                id=target_id,
+                title="",
+                url=url,
+                ws_url=ws_url,
+                type="page",
+                incognito=False,
+                hidden=True,
+            )
+            self._hidden_tabs[target_id] = tab
+            logger.info("Created hidden tab %s for %s", target_id[:8], url)
+            return tab
+        finally:
+            await client.disconnect()
+
+    async def create_incognito_tab(self, url: str = "about:blank") -> Optional[Tab]:
+        """Create a new incognito window with a tab.
+
+        The new window has its own browser context — cookies, storage,
+        and auth state are completely separate from the main browser session.
+
+        Args:
+            url: Initial URL to load.
+
+        Returns:
+            Tab object for the incognito tab, or None on failure.
+        """
+        browser_ws = self.get_browser_ws_url()
+        if not browser_ws:
+            logger.warning("Cannot create incognito tab: browser WS URL unavailable")
+            return None
+
+        from .client import CDPClient
+        client = CDPClient(browser_ws)
+        await client.connect()
+        try:
+            window_result = await client.create_window(url=url, incognito=True)
+            window_id = window_result.get("result", {}).get("windowId")
+            if not window_id:
+                logger.error("create_window returned no windowId")
+                return None
+
+            targets = await client.get_targets()
+            target_id = None
+            for t in targets:
+                if t.get("type") == "page" and (
+                    t.get("url", "") == url or (url == "about:blank" and t.get("url", "") == "about:blank")
+                ):
+                    target_id = t["targetId"]
+                    break
+            if not target_id:
+                logger.error("Could not find target for new incognito window")
+                return None
+
+            ws_url = self._make_page_ws_url(target_id)
+            tab = Tab(
+                id=target_id,
+                title="",
+                url=url,
+                ws_url=ws_url,
+                type="page",
+                incognito=True,
+                hidden=False,
+            )
+            logger.info("Created incognito tab %s for %s", target_id[:8], url)
+            return tab
+        finally:
+            await client.disconnect()
+
+    async def close_tab(self, target_id: str) -> bool:
+        """Close a tab (or any target) by its target ID.
+
+        Args:
+            target_id: The target ID to close.
+
+        Returns:
+            True if closed successfully, False otherwise.
+        """
+        if target_id in self._hidden_tabs:
+            del self._hidden_tabs[target_id]
+
+        browser_ws = self.get_browser_ws_url()
+        if not browser_ws:
+            return False
+
+        from .client import CDPClient
+        client = CDPClient(browser_ws)
+        try:
+            await client.connect()
+            await client.close_target(target_id)
+            logger.info("Closed tab %s", target_id[:8])
+            return True
+        except Exception as e:
+            logger.warning("Failed to close tab %s: %s", target_id[:8], e)
+            return False
+        finally:
+            await client.disconnect()
+
+    def get_hidden_tabs(self) -> list[Tab]:
+        """Get all hidden tabs that were created by LinkAgent.
+
+        Returns:
+            List of Tab objects for currently tracked hidden tabs.
+        """
+        return list(self._hidden_tabs.values())
+
+    async def get_tabs_extended(self) -> list[Tab]:
+        """Get all available tabs with enhanced info (incognito, hidden).
+
+        Combines tabs from the standard /json endpoint (visible, non-incognito)
+        with any hidden tabs created by LinkAgent. Also attempts to detect
+        incognito tabs via the browser-level Target.getTargets.
+
+        Returns:
+            List of Tab objects with incognito and hidden flags populated.
+        """
+        visible_tabs = self.get_tabs()
+
+        tabs = list(visible_tabs)
+
+        hidden_tabs = self.get_hidden_tabs()
+        for t in hidden_tabs:
+            if not any(t.id == vt.id for vt in tabs):
+                tabs.append(t)
+
+        browser_ws = self.get_browser_ws_url()
+        if browser_ws:
+            try:
+                from .client import CDPClient
+                client = CDPClient(browser_ws)
+                await client.connect()
+                try:
+                    all_targets = await client.get_targets()
+                    incognito_target_ids: set[str] = set()
+                    contexts_seen: set[str] = set()
+                    default_context_id = None
+                    for t in all_targets:
+                        ctx = t.get("browserContextId")
+                        if ctx:
+                            if default_context_id is None:
+                                default_context_id = ctx
+                            elif ctx != default_context_id:
+                                incognito_target_ids.add(t["targetId"])
+
+                    for tab in tabs:
+                        if tab.id in incognito_target_ids:
+                            object.__setattr__(tab, "incognito", True)
+                finally:
+                    await client.disconnect()
+            except Exception as e:
+                logger.debug("Failed to enhance tab info: %s", e)
+
+        return tabs
 
     def _find_installed_browser(self) -> Optional[Browser]:
         """Find the first installed Chromium browser."""
