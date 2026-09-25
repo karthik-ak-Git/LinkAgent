@@ -38,6 +38,7 @@ from .core.registry import registry
 from .logging import setup_logging
 from .sites import auto_discover
 from .research.engine import ResearchEngine
+from .research.reasoning import initialize as initialize_reasoning
 from .jobs.manager import JobManager
 
 logger = logging.getLogger("linkagent.server")
@@ -234,10 +235,73 @@ _engine = ResearchEngine(browser_manager=_browser, max_queries=get_config().max_
 _job_manager = JobManager(_engine)
 
 RESEARCH_TOOLS = [
-    Tool(name="research_create", description="Create a universal research job (background, 500 query budget, evidence/claim tracking)", inputSchema={"type":"object","properties":{"query":{"type":"string"},"max_queries":{"type":"integer","default":500},"background":{"type":"boolean","default":True}},"required":["query"]}),
-    Tool(name="research_status", description="Get research job status/coverage", inputSchema={"type":"object","properties":{"job_id":{"type":"string"}},"required":["job_id"]}),
-    Tool(name="research_cancel", description="Cancel a research job", inputSchema={"type":"object","properties":{"job_id":{"type":"string"}},"required":["job_id"]}),
-    Tool(name="browser_status", description="Browser discovery + session ownership status", inputSchema={"type":"object","properties":{}}),
+    Tool(
+        name="agent_init",
+        description="Initialize a concise, evidence-first execution envelope with a small token budget, background support, and the existing regular browser profile. This is a compact checklist, not private chain-of-thought.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "task": {"type": "string", "description": "Optional task label; do not replace the exact request in research_create"},
+                "execution_mode": {"type": "string", "enum": ["interactive", "background"], "default": "background"},
+                "token_budget": {"type": "integer", "minimum": 256, "maximum": 8000, "default": 1200},
+                "browser_mode": {"type": "string", "enum": ["existing", "hidden_tab"], "default": "existing"},
+            },
+        },
+    ),
+    Tool(
+        name="research_create",
+        description="Create an evidence-first research job. The exact request is immutable; requirements, primary sources, and scope are preserved before any search.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Exact user request; do not silently paraphrase"},
+                "requirements": {"type": "array", "items": {"type": "object", "properties": {
+                    "id": {"type": "string"},
+                    "text": {"type": "string"},
+                    "type": {"type": "string"},
+                    "required": {"type": "boolean", "default": True},
+                }}},
+                "primary_sources": {"type": "array", "items": {"type": "string"}},
+                "scope": {"type": "array", "items": {"type": "string"}},
+                "max_queries": {"type": "integer", "minimum": 1, "maximum": 500, "default": 500},
+                "background": {"type": "boolean", "default": True},
+            },
+            "required": ["query"],
+        },
+    ),
+    Tool(name="research_context", description="Return the immutable request IR, checksum, requirements, and next evidence action.", inputSchema={"type": "object", "properties": {"job_id": {"type": "string"}}, "required": ["job_id"]}),
+    Tool(name="research_plan", description="Build or return a request-preserving query plan. A plan is not evidence.", inputSchema={"type": "object", "properties": {"job_id": {"type": "string"}, "max_queries": {"type": "integer", "minimum": 1, "maximum": 500}, "rebuild": {"type": "boolean", "default": False}}, "required": ["job_id"]}),
+    Tool(name="research_ingest", description="Ingest a retrieved source with exact URL, excerpt, provenance, and verification state. Never infer a source was inspected without ingesting it.", inputSchema={"type": "object", "properties": {"job_id": {"type": "string"}, "url": {"type": "string"}, "title": {"type": "string"}, "content": {"type": "string"}, "excerpt": {"type": "string"}, "source_type": {"type": "string", "enum": ["primary", "secondary", "tertiary"]}, "primary": {"type": "boolean", "default": False}, "verified": {"type": "boolean", "default": False}, "claim": {"type": "string"}, "requirement_ids": {"type": "array", "items": {"type": "string"}}, "locator": {"type": "string"}, "published_at": {"type": "string"}, "freshness": {"type": "number", "minimum": 0, "maximum": 1}}, "required": ["job_id", "url"]}),
+    Tool(name="research_claim", description="Record a material claim and bind it to ingested evidence IDs. Unsupported claims remain unverified.", inputSchema={"type": "object", "properties": {"job_id": {"type": "string"}, "claim": {"type": "string"}, "requirement_ids": {"type": "array", "items": {"type": "string"}}, "evidence_ids": {"type": "array", "items": {"type": "string"}}, "status": {"type": "string", "enum": ["supported", "partially_supported", "unverified", "ambiguous", "insufficient_data"]}}, "required": ["job_id", "claim"]}),
+    Tool(
+        name="research_correct",
+        description="Record an explicit user correction, retire active hypotheses, preserve the original request, and rebuild the gap plan.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "job_id": {"type": "string"},
+                "correction": {"type": "string"},
+                "requirements": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "text": {"type": "string"},
+                            "type": {"type": "string"},
+                            "required": {"type": "boolean", "default": True},
+                        },
+                    },
+                },
+            },
+            "required": ["job_id", "correction"],
+        },
+    ),
+    Tool(name="research_audit", description="Run independent request-fidelity, evidence, freshness, contradiction, primary-source, and coverage gates.", inputSchema={"type": "object", "properties": {"job_id": {"type": "string"}, "final": {"type": "boolean", "default": False}}, "required": ["job_id"]}),
+    Tool(name="research_synthesize", description="Compile only supported claims and expose uncovered requirements, unknowns, and contradictions.", inputSchema={"type": "object", "properties": {"job_id": {"type": "string"}}, "required": ["job_id"]}),
+    Tool(name="research_export", description="Export the complete auditable research state as JSON.", inputSchema={"type": "object", "properties": {"job_id": {"type": "string"}}, "required": ["job_id"]}),
+    Tool(name="research_status", description="Get research job status, request checksum, and coverage summary.", inputSchema={"type": "object", "properties": {"job_id": {"type": "string"}}, "required": ["job_id"]}),
+    Tool(name="research_cancel", description="Cancel a research job without deleting its audit trail.", inputSchema={"type": "object", "properties": {"job_id": {"type": "string"}}, "required": ["job_id"]}),
+    Tool(name="browser_status", description="Browser discovery + session ownership status", inputSchema={"type": "object", "properties": {}}),
 ]
 
 
@@ -372,17 +436,81 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             return await _handle_create_incognito_tab(arguments)
         elif name == "close_tab":
             return await _handle_close_tab(arguments)
+        elif name == "agent_init":
+            return [TextContent(type="text", text=json.dumps(initialize_reasoning(
+                task=arguments.get("task", ""),
+                execution_mode=arguments.get("execution_mode", "background"),
+                token_budget=arguments.get("token_budget", 1200),
+                browser_mode=arguments.get("browser_mode", "existing"),
+            ), indent=2, ensure_ascii=False))]
         elif name == "research_create":
-            st=_job_manager.create(arguments["query"], max_queries=arguments.get("max_queries",500), background=arguments.get("background",True))
-            return [TextContent(type="text", text=json.dumps({"job_id":st.task_id,"status":st.status}, indent=2))]
+            st = _job_manager.create(
+                arguments["query"],
+                max_queries=arguments.get("max_queries", 500),
+                background=arguments.get("background", True),
+                requirements=arguments.get("requirements"),
+                primary_sources=arguments.get("primary_sources"),
+                scope=arguments.get("scope"),
+            )
+            return [TextContent(type="text", text=json.dumps({
+                "job_id": st.task_id,
+                "status": st.status,
+                "context": _engine.context(st.task_id),
+            }, indent=2, ensure_ascii=False))]
+        elif name == "research_context":
+            return [TextContent(type="text", text=json.dumps(_engine.context(arguments["job_id"]), indent=2, ensure_ascii=False))]
+        elif name == "research_plan":
+            return [TextContent(type="text", text=json.dumps({
+                "job_id": arguments["job_id"],
+                "request_checksum": _engine.get(arguments["job_id"]).request.checksum,
+                "plan": _engine.build_plan(arguments["job_id"], arguments.get("max_queries"), arguments.get("rebuild", False)),
+            }, indent=2, ensure_ascii=False))]
+        elif name == "research_ingest":
+            return [TextContent(type="text", text=json.dumps(_engine.ingest_source(
+                arguments["job_id"],
+                url=arguments["url"],
+                title=arguments.get("title", ""),
+                content=arguments.get("content", ""),
+                excerpt=arguments.get("excerpt", ""),
+                source_type=arguments.get("source_type", "secondary"),
+                primary=arguments.get("primary", False),
+                verified=arguments.get("verified", False),
+                claim=arguments.get("claim", ""),
+                requirement_ids=arguments.get("requirement_ids"),
+                locator=arguments.get("locator", ""),
+                published_at=arguments.get("published_at"),
+                freshness=arguments.get("freshness"),
+            ), indent=2, ensure_ascii=False))]
+        elif name == "research_claim":
+            return [TextContent(type="text", text=json.dumps(_engine.add_claim(
+                arguments["job_id"],
+                arguments["claim"],
+                requirement_ids=arguments.get("requirement_ids"),
+                evidence_ids=arguments.get("evidence_ids"),
+                status=arguments.get("status", "unverified"),
+            ), indent=2, ensure_ascii=False))]
+        elif name == "research_correct":
+            return [TextContent(type="text", text=json.dumps(_engine.apply_correction(
+                arguments["job_id"],
+                arguments["correction"],
+                requirements=arguments.get("requirements"),
+            ), indent=2, ensure_ascii=False))]
+        elif name == "research_audit":
+            return [TextContent(type="text", text=json.dumps(_engine.audit(
+                arguments["job_id"], final=arguments.get("final", False)
+            ), indent=2, ensure_ascii=False))]
+        elif name == "research_synthesize":
+            return [TextContent(type="text", text=json.dumps(_engine.synthesize(arguments["job_id"]), indent=2, ensure_ascii=False))]
+        elif name == "research_export":
+            return [TextContent(type="text", text=json.dumps(_engine.export(arguments["job_id"]), indent=2, ensure_ascii=False))]
         elif name == "research_status":
-            st=_job_manager.status(arguments["job_id"])
-            return [TextContent(type="text", text=json.dumps(st.progress() if st else {"error":"not found"}, indent=2))]
+            st = _job_manager.status(arguments["job_id"])
+            return [TextContent(type="text", text=json.dumps(st.progress() if st else {"error": "not found"}, indent=2, ensure_ascii=False))]
         elif name == "research_cancel":
-            st=_job_manager.cancel(arguments["job_id"])
-            return [TextContent(type="text", text=json.dumps({"job_id":arguments["job_id"],"status":st.status if st else "not found"}, indent=2))]
+            st = _job_manager.cancel(arguments["job_id"])
+            return [TextContent(type="text", text=json.dumps({"job_id": arguments["job_id"], "status": st.status if st else "not found"}, indent=2, ensure_ascii=False))]
         elif name == "browser_status":
-            return [TextContent(type="text", text=json.dumps({"cdp_available":_browser.is_cdp_available(),"tabs":len(_browser.get_tabs()),"hidden":len(_browser.get_hidden_tabs()),"mode":get_config().browser_mode}, indent=2))]
+            return [TextContent(type="text", text=json.dumps({"cdp_available": _browser.is_cdp_available(), "tabs": len(_browser.get_tabs()), "hidden": len(_browser.get_hidden_tabs()), "mode": get_config().browser_mode}, indent=2))]
         else:
             return [TextContent(type="text", text=f"Unknown tool: {name}")]
 
@@ -590,7 +718,9 @@ async def _handle_create_hidden_tab(args: dict) -> list[TextContent]:
 
 
 async def _handle_create_incognito_tab(args: dict) -> list[TextContent]:
-    """Create a new incognito window with a tab."""
+    """Create an incognito window only when explicitly enabled."""
+    if not get_config().allow_incognito:
+        return [TextContent(type="text", text="Incognito tabs are disabled. LinkAgent is configured to use the existing regular browser profile.")]
     url = args.get("url", "about:blank")
     tab = await _browser.create_incognito_tab(url)
     if not tab:

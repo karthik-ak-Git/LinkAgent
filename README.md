@@ -54,7 +54,7 @@ msedge.exe --remote-debugging-port=9222
 google-chrome --remote-debugging-port=9222
 ```
 
-Log in to any target site in this browser window (session is reused).
+Log in to any target site in this browser window (session is reused). LinkAgent uses the existing regular browser session; `create_hidden_tab` also reuses that session. Incognito tabs are disabled by default.
 
 ### 2. Install and run
 
@@ -76,8 +76,13 @@ The server exposes these tools:
 | `list_tabs` | List open browser tabs |
 | `scroll_page` | Scroll the current page |
 | `click` / `type_text` / `send_keys` / `get_text` / `get_value` / `wait_for_element` | Page interaction |
-| `create_hidden_tab` / `create_incognito_tab` / `close_tab` | Tab management |
-| `research_create` / `research_status` / `research_cancel` / `browser_status` | Universal research engine |
+| `create_hidden_tab` / `create_incognito_tab` / `close_tab` | Tab management; hidden tabs reuse the existing regular session, incognito is opt-in |
+| `agent_init` | Initialize a concise evidence-first execution envelope for interactive or background work |
+| `research_create` / `research_context` / `research_plan` | Capture an immutable request, build a request-preserving plan |
+| `research_ingest` / `research_claim` | Store source excerpts, provenance, and evidence-bound claims |
+| `research_correct` | Record corrections and retire active hypotheses |
+| `research_audit` / `research_synthesize` / `research_export` | Enforce coverage gates and compile supported claims only |
+| `research_status` / `research_cancel` / `browser_status` | Job and browser state |
 | *(site plugins auto-discovered via `sites/*/register()`)* | Extensible per-site extractors |
 
 See [docs/tasks.md](docs/tasks.md) for detailed tool documentation.
@@ -134,7 +139,26 @@ LINKAGENT_CDP_PORT=9222        # CDP debugging port
 LINKAGENT_CDP_HOST=127.0.0.1   # CDP host
 LINKAGENT_LOG_LEVEL=INFO       # DEBUG, INFO, WARNING, ERROR
 LINKAGENT_LOG_FILE=linkagent.log  # Optional file logging
+LINKAGENT_ALLOW_JS=0           # Arbitrary page JavaScript is disabled by default
+LINKAGENT_ALLOW_INCOGNITO=0    # Use the existing regular profile by default
 ```
+
+## Evidence-first execution
+
+`agent_init` returns a compact execution contract with a configurable token budget. It is a deterministic checklist, not an exposure of private chain-of-thought. Background jobs are supported, but a query plan is never treated as evidence.
+
+Use this order:
+
+1. `agent_init` — choose `execution_mode: "background"` and the existing regular browser profile.
+2. `research_create` — pass the exact request, explicit requirements, scope, and named primary sources.
+3. `research_context` / `research_plan` — inspect the immutable request and build a request-preserving plan.
+4. `research_ingest` — record each inspected URL, exact excerpt, locator, source type, and verification state.
+5. `research_claim` — bind material claims to evidence IDs.
+6. `research_correct` — record user corrections; active hypotheses are retired and the plan is rebuilt.
+7. `research_audit` with `final: true` — do not synthesize as complete while coverage, freshness, contradiction, or request-integrity gates fail.
+8. `research_synthesize` — use supported claims only and expose unknowns.
+
+The original request remains unchanged throughout the job. Memory is treated as an untrusted cache and cannot independently support a final claim.
 
 See `.env.example` for all options.
 
@@ -245,8 +269,9 @@ See [docs/roadmap.md](docs/roadmap.md) for the full roadmap.
 
  - Universal CDP-based extraction framework
  - Plugin system with auto-discovery (no bundled site lock-in)
- - Universal browser automation + research engine (500-query budget, coverage gate)
- - 14 browser control tools + research/job tools
+ - Universal browser automation + evidence-first research controller
+ - 14 browser control tools + 27 total MCP tools
+ - Concise execution initialization, background jobs, immutable request IR, evidence ledger, correction handling, and coverage gates
 - Cross-platform browser detection
 - Environment-based configuration
 - Structured logging
