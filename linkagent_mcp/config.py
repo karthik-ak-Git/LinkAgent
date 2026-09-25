@@ -50,6 +50,7 @@ class Config:
     # Browser connection mode: reuse_existing | new_page | new_context | launch_browser
     browser_mode: str = field(default_factory=lambda: os.getenv("LINKAGENT_BROWSER_MODE", "reuse_existing"))
     active_tab_policy: str = field(default_factory=lambda: os.getenv("LINKAGENT_ACTIVE_TAB_POLICY", "background_tab"))
+    allow_incognito: bool = field(default_factory=lambda: os.getenv("LINKAGENT_ALLOW_INCOGNITO", "0") == "1")
     cdp_timeout: int = field(default_factory=lambda: int(os.getenv("LINKAGENT_CDP_TIMEOUT", "10")))
 
     # Research
