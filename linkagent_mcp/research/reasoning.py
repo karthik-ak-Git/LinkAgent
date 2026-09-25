@@ -50,6 +50,8 @@ def initialize(
     execution_mode: str = "background",
     token_budget: int = 1200,
     browser_mode: str = "existing",
+    browser: str = "user_specified",
+    incognito_explicitly_requested: bool = False,
 ) -> dict[str, Any]:
     """Initialize a compact, auditable execution envelope.
 
@@ -61,7 +63,8 @@ def initialize(
     except (TypeError, ValueError):
         budget = DEFAULT_POLICY.token_budget
     mode = execution_mode if execution_mode in {"interactive", "background"} else "background"
-    browser = browser_mode if browser_mode in {"existing", "hidden_tab"} else "existing"
+    requested_browser = browser_mode if browser_mode in {"existing", "hidden_tab", "incognito"} else "existing"
+    selected_browser = "incognito" if requested_browser == "incognito" and incognito_explicitly_requested else "existing"
     policy = ReasoningPolicy(
         name=DEFAULT_POLICY.name,
         version=DEFAULT_POLICY.version,
@@ -76,10 +79,12 @@ def initialize(
             "task": task,
             "mode": mode,
             "background_supported": True,
-            "browser": "existing_regular_profile",
-            "browser_requested_mode": browser,
+            "browser": "incognito" if selected_browser == "incognito" else "existing_regular_profile",
+            "browser_selection": browser if browser in {"chrome", "edge", "opera", "brave", "vivaldi"} else "user_specified",
+            "browser_requested_mode": requested_browser,
             "incognito_default": False,
-            "hidden_tabs_use_existing_session": True,
+            "incognito_requires_explicit_user_request": True,
+            "hidden_tabs_use_existing_session": selected_browser != "incognito",
         },
         "guidance": [
             "Use a concise private checklist; do not reveal private reasoning.",

@@ -39,6 +39,7 @@ from .logging import setup_logging
 from .sites import auto_discover
 from .research.engine import ResearchEngine
 from .research.reasoning import initialize as initialize_reasoning
+from .doctor import browser_doctor
 from .jobs.manager import JobManager
 
 logger = logging.getLogger("linkagent.server")
@@ -177,11 +178,13 @@ BROWSER_TOOLS = [
     ),
     Tool(
         name="create_incognito_tab",
-        description="Create a new incognito/private window with a tab. The tab has a separate browser context — cookies, storage, and auth are completely isolated from the main session.",
+        description="Create an incognito/private window only when the user explicitly requested incognito. It is isolated from the signed-in regular profile and must never be used by default.",
         inputSchema={
             "type": "object",
             "properties": {
-                "url": {"type": "string", "description": "URL to load in the incognito tab (default: about:blank)", "default": "about:blank"},
+                "url": {"type": "string", "description": "URL to load in the incognito tab", "default": "about:blank"},
+                "explicit_user_request": {"type": "boolean", "default": False, "description": "Must be true only when the user explicitly asked for incognito/private browsing"},
+                "reason": {"type": "string", "description": "Short record of the user's explicit incognito request"},
             },
         },
     ),
@@ -244,7 +247,9 @@ RESEARCH_TOOLS = [
                 "task": {"type": "string", "description": "Optional task label; do not replace the exact request in research_create"},
                 "execution_mode": {"type": "string", "enum": ["interactive", "background"], "default": "background"},
                 "token_budget": {"type": "integer", "minimum": 256, "maximum": 8000, "default": 1200},
-                "browser_mode": {"type": "string", "enum": ["existing", "hidden_tab"], "default": "existing"},
+                "browser_mode": {"type": "string", "enum": ["existing", "hidden_tab", "incognito"], "default": "existing"},
+                "browser": {"type": "string", "enum": ["chrome", "edge", "opera", "brave", "vivaldi"], "description": "Browser explicitly selected by the user"},
+                "incognito_explicitly_requested": {"type": "boolean", "default": False, "description": "Only true when the user explicitly requested incognito/private browsing"},
             },
         },
     ),
@@ -302,6 +307,7 @@ RESEARCH_TOOLS = [
     Tool(name="research_status", description="Get research job status, request checksum, and coverage summary.", inputSchema={"type": "object", "properties": {"job_id": {"type": "string"}}, "required": ["job_id"]}),
     Tool(name="research_cancel", description="Cancel a research job without deleting its audit trail.", inputSchema={"type": "object", "properties": {"job_id": {"type": "string"}}, "required": ["job_id"]}),
     Tool(name="browser_status", description="Browser discovery + session ownership status", inputSchema={"type": "object", "properties": {}}),
+    Tool(name="browser_doctor", description="Read-only health check for the selected browser and CDP session. It does not inspect cookies or start/stop browsers.", inputSchema={"type": "object", "properties": {"browser": {"type": "string", "enum": ["chrome", "edge", "opera", "brave", "vivaldi"], "description": "Browser explicitly selected by the user"}}}),
 ]
 
 
@@ -442,6 +448,8 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
                 execution_mode=arguments.get("execution_mode", "background"),
                 token_budget=arguments.get("token_budget", 1200),
                 browser_mode=arguments.get("browser_mode", "existing"),
+                browser=arguments.get("browser", "user_specified"),
+                incognito_explicitly_requested=arguments.get("incognito_explicitly_requested", False),
             ), indent=2, ensure_ascii=False))]
         elif name == "research_create":
             st = _job_manager.create(
@@ -511,6 +519,8 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             return [TextContent(type="text", text=json.dumps({"job_id": arguments["job_id"], "status": st.status if st else "not found"}, indent=2, ensure_ascii=False))]
         elif name == "browser_status":
             return [TextContent(type="text", text=json.dumps({"cdp_available": _browser.is_cdp_available(), "tabs": len(_browser.get_tabs()), "hidden": len(_browser.get_hidden_tabs()), "mode": get_config().browser_mode}, indent=2))]
+        elif name == "browser_doctor":
+            return [TextContent(type="text", text=json.dumps(browser_doctor(_browser, arguments.get("browser")), indent=2, ensure_ascii=False))]
         else:
             return [TextContent(type="text", text=f"Unknown tool: {name}")]
 
@@ -718,9 +728,11 @@ async def _handle_create_hidden_tab(args: dict) -> list[TextContent]:
 
 
 async def _handle_create_incognito_tab(args: dict) -> list[TextContent]:
-    """Create an incognito window only when explicitly enabled."""
+    """Create an incognito window only when explicitly enabled and requested."""
+    if not args.get("explicit_user_request", False):
+        return [TextContent(type="text", text="Incognito mode requires explicit_user_request=true. Use the existing regular browser profile by default.")]
     if not get_config().allow_incognito:
-        return [TextContent(type="text", text="Incognito tabs are disabled. LinkAgent is configured to use the existing regular browser profile.")]
+        return [TextContent(type="text", text="Incognito tabs are disabled by the LinkAgent configuration.")]
     url = args.get("url", "about:blank")
     tab = await _browser.create_incognito_tab(url)
     if not tab:

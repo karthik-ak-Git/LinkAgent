@@ -35,26 +35,16 @@ See [docs/architecture.md](docs/architecture.md) for detailed design.
 
 ## Quick Start
 
-### 1. Start your browser with CDP
+### 1. Start the browser explicitly selected by the user
 
-```bash
-# Windows (Chrome)
-chrome.exe --remote-debugging-port=9222
+On Windows, the global launcher requires the browser name so LinkAgent never silently switches browsers:
 
-# Windows (Edge)
-msedge.exe --remote-debugging-port=9222
-
-# Windows (Opera)
-"C:\Users\YourName\AppData\Local\Programs\Opera\opera.exe" --remote-debugging-port=9222
-
-# macOS
-/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=9222
-
-# Linux
-google-chrome --remote-debugging-port=9222
+```powershell
+& "$env:USERPROFILE\.opencode\tools\Start-LinkAgent.ps1" -Browser chrome
+# or: -Browser edge | opera | brave | vivaldi
 ```
 
-Log in to any target site in this browser window (session is reused). LinkAgent uses the existing regular browser session; `create_hidden_tab` also reuses that session. Incognito tabs are disabled by default.
+The selected browser starts on `127.0.0.1:9222`. By default the launcher creates or reuses a local credential-preserving profile mirror under `%USERPROFILE%\\.opencode\\profiles\\LinkAgent-<browser>`, because current Chromium versions may reject remote debugging against the default profile. The mirror copies the selected browser's last-used profile locally; LinkAgent does not inspect or transmit cookies or credentials. Use `-DirectProfile` only for browsers/profiles that support direct CDP attachment. If the selected browser is already running without CDP, fully close it and rerun; LinkAgent will not terminate it automatically. `create_hidden_tab` creates background targets in the same regular session. Incognito is available only when the user explicitly requests it and the tool call includes `explicit_user_request: true`.
 
 ### 2. Install and run
 
@@ -82,7 +72,7 @@ The server exposes these tools:
 | `research_ingest` / `research_claim` | Store source excerpts, provenance, and evidence-bound claims |
 | `research_correct` | Record corrections and retire active hypotheses |
 | `research_audit` / `research_synthesize` / `research_export` | Enforce coverage gates and compile supported claims only |
-| `research_status` / `research_cancel` / `browser_status` | Job and browser state |
+| `research_status` / `research_cancel` / `browser_status` / `browser_doctor` | Job and read-only browser health state |
 | *(site plugins auto-discovered via `sites/*/register()`)* | Extensible per-site extractors |
 
 See [docs/tasks.md](docs/tasks.md) for detailed tool documentation.
@@ -149,7 +139,7 @@ LINKAGENT_ALLOW_INCOGNITO=0    # Use the existing regular profile by default
 
 Use this order:
 
-1. `agent_init` — choose `execution_mode: "background"` and the existing regular browser profile.
+1. `agent_init` — choose `execution_mode: "background"`, the selected browser, and the regular profile mode. Use `browser_doctor` first if the launcher did not report a ready CDP session.
 2. `research_create` — pass the exact request, explicit requirements, scope, and named primary sources.
 3. `research_context` / `research_plan` — inspect the immutable request and build a request-preserving plan.
 4. `research_ingest` — record each inspected URL, exact excerpt, locator, source type, and verification state.
@@ -270,7 +260,7 @@ See [docs/roadmap.md](docs/roadmap.md) for the full roadmap.
  - Universal CDP-based extraction framework
  - Plugin system with auto-discovery (no bundled site lock-in)
  - Universal browser automation + evidence-first research controller
- - 14 browser control tools + 27 total MCP tools
+ - 14 browser control tools + 28 total MCP tools
  - Concise execution initialization, background jobs, immutable request IR, evidence ledger, correction handling, and coverage gates
 - Cross-platform browser detection
 - Environment-based configuration
